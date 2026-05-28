@@ -66,6 +66,7 @@ function fmtB(n: number) {
 
 export default function Dashboard() {
   const [insights, setInsights] = useState<AdInsight[]>([]);
+  const [prevInsights, setPrevInsights] = useState<AdInsight[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [datePreset, setDatePreset] = useState("today");
@@ -135,9 +136,10 @@ export default function Dashboard() {
       try {
         const cached = sessionStorage.getItem(cacheKey);
         if (cached) {
-          const { data, ts } = JSON.parse(cached);
+          const { data, prevData, ts } = JSON.parse(cached);
           if (Date.now() - ts < 15 * 60 * 1000) {
-            setInsights(data);
+            setInsights(data || []);
+            setPrevInsights(prevData || []);
             setLastUpdated(new Date(ts));
             return;
           }
@@ -150,9 +152,14 @@ export default function Dashboard() {
       const res = await fetch(`/api/insights?date_preset=${datePreset}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      setInsights(data.insights || []);
+      const current = data.insights || [];
+      const prev = data.previousInsights || [];
+      setInsights(current);
+      setPrevInsights(prev);
       setLastUpdated(new Date());
-      try { sessionStorage.setItem(cacheKey, JSON.stringify({ data: data.insights || [], ts: Date.now() })); } catch {}
+      try {
+        sessionStorage.setItem(cacheKey, JSON.stringify({ data: current, prevData: prev, ts: Date.now() }));
+      } catch {}
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
     } finally {
@@ -180,6 +187,27 @@ export default function Dashboard() {
   })();
 
   const filteredInsights = insights.filter((i) => {
+    const b = i.parsed.branch || "";
+    if (tab === "branch") {
+      if (branchFilter === "classgo" && !b.startsWith("Class Go")) return false;
+      if (branchFilter === "class" && b.startsWith("Class Go")) return false;
+      if (programFilter !== "all" && i.parsed.programCode !== programFilter) return false;
+    }
+    if (tab === "program") {
+      if (branchFilter === "classgo" && !b.startsWith("Class Go")) return false;
+      if (branchFilter === "class" && b.startsWith("Class Go")) return false;
+      if (branchNameFilter !== "all" && b !== branchNameFilter) return false;
+    }
+    if (tab === "creative") {
+      if (branchFilter === "classgo" && !b.startsWith("Class Go")) return false;
+      if (branchFilter === "class" && b.startsWith("Class Go")) return false;
+      if (branchNameFilter !== "all" && b !== branchNameFilter) return false;
+      if (programFilter !== "all" && i.parsed.programCode !== programFilter) return false;
+    }
+    return true;
+  });
+
+  const filteredPrevInsights = prevInsights.filter((i) => {
     const b = i.parsed.branch || "";
     if (tab === "branch") {
       if (branchFilter === "classgo" && !b.startsWith("Class Go")) return false;
@@ -387,6 +415,7 @@ export default function Dashboard() {
 
         <KpiCards
           insights={filteredInsights}
+          prevInsights={filteredPrevInsights}
           filterSummary={
             [
               branchFilter === "class" ? "Class" : branchFilter === "classgo" ? "Class Go" : "ทุกกลุ่ม",

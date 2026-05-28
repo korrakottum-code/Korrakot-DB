@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type { AdInsight } from "@/lib/meta";
 import { Play, Image as ImageIcon, X, ChevronDown, ChevronUp, Trophy } from "lucide-react";
 import { PROGRAM_MAP } from "@/lib/parser";
@@ -148,12 +148,6 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
     return spendB - spendA;
   });
 
-  // Auto-expand first program group for quicker view
-  useEffect(() => {
-    if (programList.length && expandedPrograms.size === 0) {
-      setExpandedPrograms(new Set([programList[0][0]]));
-    }
-  }, [programList.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleProgram = (p: string) => {
     setExpandedPrograms((prev) => {
@@ -175,25 +169,36 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
     setCreatives({});
   }, [insights.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    const newRows = rows.filter((r) => !fetchedRef.current.has(r.groupKey));
+  const fetchThumbnails = useCallback((targetRows: CreativeRow[]) => {
+    const newRows = targetRows.filter((r) => !fetchedRef.current.has(r.groupKey));
     if (!newRows.length) return;
-    setLoading(true);
     newRows.forEach((r) => fetchedRef.current.add(r.groupKey));
     const adIds = newRows.map((r) => r.repAdId);
     const accountIds = newRows.map((r) => (adToAccount[r.repAdId] || "").replace("act_", ""));
+    setLoading(true);
     fetch(`/api/creative?ad_ids=${adIds.join(",")}&account_ids=${accountIds.join(",")}`)
       .then((r) => r.json())
       .then((data: Record<string, CreativeInfo>) => {
-        // remap from repAdId -> groupKey so creatives are keyed by groupKey
         const remapped: Record<string, CreativeInfo> = {};
-        newRows.forEach((r) => {
-          if (data[r.repAdId]) remapped[r.groupKey] = data[r.repAdId];
-        });
+        newRows.forEach((r) => { if (data[r.repAdId]) remapped[r.groupKey] = data[r.repAdId]; });
         setCreatives((prev) => ({ ...prev, ...remapped }));
       })
       .finally(() => setLoading(false));
+  }, [adToAccount]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Only fetch top-3 of each program (heroes) on initial load
+  useEffect(() => {
+    const heroRows = programList.flatMap(([, progRows]) => progRows.slice(0, 3));
+    fetchThumbnails(heroRows);
   }, [insights]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch remaining rows when a program is expanded
+  useEffect(() => {
+    for (const prog of expandedPrograms) {
+      const progRows = programGroups[prog];
+      if (progRows) fetchThumbnails(progRows);
+    }
+  }, [expandedPrograms]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div>
@@ -290,84 +295,67 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
 
           return (
             <div key={program} className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-              {/* Program header — always visible */}
+              {/* Desktop: horizontal (thumbnails left + info right). Mobile: stacked vertical */}
               <div
-                className="flex items-center justify-between px-3 py-2.5 cursor-pointer hover:bg-gray-800/50 transition-colors"
+                className="flex flex-col sm:flex-row gap-3 p-3 cursor-pointer hover:bg-gray-800/30 transition-colors"
                 onClick={() => toggleProgram(program)}
               >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-white font-bold text-sm truncate">{program}</span>
-                  <span className="text-[11px] bg-gray-700 text-gray-200 px-2 py-0.5 rounded-full flex-shrink-0">{progRows.length}</span>
-                </div>
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  <span className="text-xs text-emerald-400 font-semibold">{fmtB(totalSpend)}</span>
-                  {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-                </div>
-              </div>
-
-              {/* Top 3 thumbnails — full width row */}
-              <div
-                className="grid grid-cols-3 gap-2 px-3 pb-2 cursor-pointer"
-                onClick={() => toggleProgram(program)}
-              >
-                {top3.map((row, idx) => {
-                  const c = creatives[row.groupKey];
-                  const isVid = !!(c?.videoId) || c?.objectType === "VIDEO";
-                  return (
-                    <div key={row.groupKey} className="relative aspect-square bg-gray-800 rounded-xl overflow-hidden">
-                      {c?.thumbnailUrl ? (
-                        <>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={proxyUrl(c.thumbnailUrl)} alt={row.groupKey} className="w-full h-full object-cover" />
-                          {isVid && (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <div className="bg-black/60 rounded-full p-1"><Play className="w-3 h-3 text-white fill-white" /></div>
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-gray-600"><ImageIcon className="w-5 h-5" /></div>
-                      )}
-                      <div className="absolute top-0.5 left-0.5 text-xs leading-none">{medals[idx]}</div>
-                      {row.branchCount > 1 && (
-                        <div className="absolute top-1 right-1 text-[10px] bg-slate-900/80 text-slate-200 px-1 rounded-full">{row.branchCount} สาขา</div>
-                      )}
-                      <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-1 py-0.5">
-                        <p className="text-[10px] font-mono text-indigo-300 truncate">{row.groupKey}</p>
-                        <p className="text-[11px] text-emerald-400 font-semibold">
-                          {sortBy === "cpi"
-                            ? row.inbox > 0 ? fmtB(row.cpi) : "-"
-                            : sortBy === "cpl"
-                              ? row.leads > 0 ? fmtB(row.cpl) : "-"
-                              : sortBy === "inbox"
-                                ? fmt(row.inbox)
-                                : sortBy === "leads"
-                                  ? fmt(row.leads)
-                                  : fmtB(row.spend)}
-                        </p>
+                {/* Top 3 thumbnails */}
+                <div className="flex gap-2 flex-shrink-0">
+                  {top3.map((row, idx) => {
+                    const c = creatives[row.groupKey];
+                    const isVid = !!(c?.videoId) || c?.objectType === "VIDEO";
+                    return (
+                      <div key={row.groupKey} className="relative w-24 h-24 sm:w-28 sm:h-28 bg-gray-800 rounded-xl overflow-hidden flex-shrink-0">
+                        {c?.thumbnailUrl ? (
+                          <>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={proxyUrl(c.thumbnailUrl)} alt={row.groupKey} className="w-full h-full object-cover" />
+                            {isVid && (
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="bg-black/60 rounded-full p-1"><Play className="w-3 h-3 text-white fill-white" /></div>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-gray-600"><ImageIcon className="w-5 h-5" /></div>
+                        )}
+                        <div className="absolute top-0.5 left-0.5 text-sm leading-none">{medals[idx]}</div>
+                        {row.branchCount > 1 && (
+                          <div className="absolute top-1 right-1 text-[10px] bg-slate-900/80 text-slate-200 px-1 rounded-full">{row.branchCount}สาขา</div>
+                        )}
+                        <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-1 py-0.5">
+                          <p className="text-[10px] font-mono text-indigo-300 truncate">{row.groupKey}</p>
+                          <p className="text-[10px] text-emerald-400 font-semibold">
+                            {sortBy === "cpi" ? (row.inbox > 0 ? fmtB(row.cpi) : "-")
+                              : sortBy === "cpl" ? (row.leads > 0 ? fmtB(row.cpl) : "-")
+                              : sortBy === "inbox" ? fmt(row.inbox)
+                              : sortBy === "leads" ? fmt(row.leads)
+                              : fmtB(row.spend)}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
 
-              {/* Metrics row */}
-              <div className="grid grid-cols-4 gap-1 px-3 pb-3 text-center">
-                <div className="bg-gray-800/60 rounded-lg px-1 py-1.5">
-                  <p className="text-[10px] text-gray-500">Inbox</p>
-                  <p className="text-xs font-bold text-purple-400">{fmt(totalInbox)}</p>
+                {/* Program info — beside thumbnails on desktop, below on mobile */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-white font-bold text-sm sm:text-base truncate">{program}</span>
+                    <span className="text-[11px] bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full flex-shrink-0">{progRows.length}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs">
+                    <span className="text-gray-500">Spend <span className="text-emerald-400 font-semibold">{fmtB(totalSpend)}</span></span>
+                    <span className="text-gray-500">Inbox <span className="text-purple-400 font-semibold">{fmt(totalInbox)}</span></span>
+                    <span className="text-gray-500">CPI <span className="text-amber-300 font-semibold">{totalInbox > 0 ? fmtB(totalCPI) : "-"}</span></span>
+                    <span className="text-gray-500">CPL <span className="text-pink-400 font-semibold">{totalLeads > 0 ? fmtB(totalCPL) : "-"}</span></span>
+                  </div>
                 </div>
-                <div className="bg-gray-800/60 rounded-lg px-1 py-1.5">
-                  <p className="text-[10px] text-gray-500">Leads</p>
-                  <p className="text-xs font-bold text-blue-400">{fmt(totalLeads)}</p>
-                </div>
-                <div className="bg-gray-800/60 rounded-lg px-1 py-1.5">
-                  <p className="text-[10px] text-gray-500">CPI</p>
-                  <p className="text-xs font-bold text-amber-300">{totalInbox > 0 ? fmtB(totalCPI) : "-"}</p>
-                </div>
-                <div className="bg-gray-800/60 rounded-lg px-1 py-1.5">
-                  <p className="text-[10px] text-gray-500">CPL</p>
-                  <p className="text-xs font-bold text-pink-400">{totalLeads > 0 ? fmtB(totalCPL) : "-"}</p>
+
+                {/* Expand icon */}
+                <div className="hidden sm:flex items-center flex-shrink-0">
+                  {isExpanded ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
                 </div>
               </div>
 

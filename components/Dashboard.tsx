@@ -68,7 +68,7 @@ export default function Dashboard() {
   const [insights, setInsights] = useState<AdInsight[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [datePreset, setDatePreset] = useState("last_30d");
+  const [datePreset, setDatePreset] = useState("today");
   const [tab, setTab] = useState<TabKey>("branch");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [showUnparsed, setShowUnparsed] = useState(false);
@@ -87,7 +87,21 @@ export default function Dashboard() {
     setProgramFilter("all");
   };
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
+    const cacheKey = `insights_${datePreset}`;
+    if (!force) {
+      try {
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) {
+          const { data, ts } = JSON.parse(cached);
+          if (Date.now() - ts < 15 * 60 * 1000) {
+            setInsights(data);
+            setLastUpdated(new Date(ts));
+            return;
+          }
+        }
+      } catch {}
+    }
     setLoading(true);
     setError("");
     try {
@@ -96,6 +110,7 @@ export default function Dashboard() {
       if (data.error) throw new Error(data.error);
       setInsights(data.insights || []);
       setLastUpdated(new Date());
+      try { sessionStorage.setItem(cacheKey, JSON.stringify({ data: data.insights || [], ts: Date.now() })); } catch {}
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
     } finally {
@@ -249,7 +264,7 @@ export default function Dashboard() {
               ))}
             </div>
             <button
-              onClick={load}
+              onClick={() => load(true)}
               disabled={loading}
               className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
             >

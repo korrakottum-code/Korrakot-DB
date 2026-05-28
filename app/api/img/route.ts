@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
     return new NextResponse(buffer, {
       headers: {
         "Content-Type": contentType,
-        "Cache-Control": "no-store",
+        "Cache-Control": "public, max-age=86400, stale-while-revalidate=3600",
       },
     });
   } catch {

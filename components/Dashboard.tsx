@@ -77,6 +77,48 @@ export default function Dashboard() {
   const [programFilter, setProgramFilter] = useState<string>("all");
   const [tableSort, setTableSort] = useState<{ col: string; dir: "asc" | "desc" }>({ col: "spend", dir: "desc" });
 
+  // Load initial filters from URL Search Params on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const d = params.get("date");
+    const t = params.get("tab") as TabKey;
+    const bf = params.get("bf") as "all" | "class" | "classgo";
+    const bnf = params.get("bnf");
+    const pf = params.get("pf");
+
+    if (d) setDatePreset(d);
+    if (t && ["branch", "program", "creative"].includes(t)) setTab(t);
+    if (bf && ["all", "class", "classgo"].includes(bf)) setBranchFilter(bf);
+    if (bnf) setBranchNameFilter(bnf);
+    if (pf) setProgramFilter(pf);
+  }, []);
+
+  // Update URL Search Params when active filters change
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    
+    const sync = (key: string, val: string, defaultVal: string) => {
+      if (val && val !== defaultVal) {
+        params.set(key, val);
+      } else {
+        params.delete(key);
+      }
+    };
+
+    sync("date", datePreset, "today");
+    sync("tab", tab, "branch");
+    sync("bf", branchFilter, "all");
+    sync("bnf", branchNameFilter, "all");
+    sync("pf", programFilter, "all");
+
+    const newSearch = params.toString();
+    const currentSearch = window.location.search.replace(/^\?/, "");
+    if (newSearch !== currentSearch) {
+      const newUrl = `${window.location.pathname}${newSearch ? "?" + newSearch : ""}`;
+      window.history.replaceState({ ...window.history.state, as: newUrl, url: newUrl }, "", newUrl);
+    }
+  }, [datePreset, tab, branchFilter, branchNameFilter, programFilter]);
+
   const handleTableSort = (col: string) => {
     setTableSort((prev) => prev.col === col ? { col, dir: prev.dir === "desc" ? "asc" : "desc" } : { col, dir: col === "cpi" || col === "cpl" ? "asc" : "desc" });
   };

@@ -317,6 +317,10 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
                               </div>
                             )}
                           </>
+                        ) : loading ? (
+                          <div className="w-full h-full bg-slate-800/80 animate-pulse flex items-center justify-center">
+                            <div className="w-8 h-8 rounded bg-slate-700/40" />
+                          </div>
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-gray-600"><ImageIcon className="w-5 h-5" /></div>
                         )}
@@ -389,6 +393,10 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
                                     </div>
                                   )}
                                 </>
+                              ) : loading ? (
+                                <div className="w-full h-full bg-slate-800/80 animate-pulse flex items-center justify-center">
+                                  <div className="w-10 h-10 rounded bg-slate-700/40" />
+                                </div>
                               ) : (
                                 <div className="w-full h-full flex flex-col items-center justify-center text-gray-600">
                                   <ImageIcon className="w-7 h-7 mb-1" /><span className="text-xs">โหลดไม่ได้</span>

@@ -92,9 +92,26 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const datePreset = searchParams.get("date_preset") || "last_30d";
+  const customSince = searchParams.get("since");
+  const customUntil = searchParams.get("until");
 
   try {
-    const ranges = getPresetRanges(datePreset);
+    let ranges: { current: { since: string; until: string }; previous: { since: string; until: string } };
+
+    if (customSince && customUntil) {
+      // Custom date range: compute previous period of equal length
+      const sinceDate = new Date(customSince);
+      const untilDate = new Date(customUntil);
+      const daysDiff = Math.round((untilDate.getTime() - sinceDate.getTime()) / (1000 * 60 * 60 * 24));
+      const prevUntilDate = subDays(sinceDate, 1);
+      const prevSinceDate = subDays(prevUntilDate, daysDiff);
+      ranges = {
+        current: { since: customSince, until: customUntil },
+        previous: { since: format(prevSinceDate, "yyyy-MM-dd"), until: format(prevUntilDate, "yyyy-MM-dd") },
+      };
+    } else {
+      ranges = getPresetRanges(datePreset);
+    }
 
     // Fetch current and previous period insights concurrently
     const [currentResults, prevResults] = await Promise.all([

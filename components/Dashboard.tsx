@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   BarChart,
   Bar,
@@ -12,6 +12,7 @@ import {
   Cell,
 } from "recharts";
 import { RefreshCw, AlertTriangle, MapPin, Layers, Gauge, Target } from "lucide-react";
+import DateRangePicker from "@/components/DateRangePicker";
 import { BRANCH_MAP, PROGRAM_MAP } from "@/lib/parser";
 import type { AdInsight } from "@/lib/meta";
 import CreativeGrid from "@/components/CreativeGrid";
@@ -77,6 +78,8 @@ export default function Dashboard() {
   const [branchNameFilter, setBranchNameFilter] = useState<string>("all");
   const [programFilter, setProgramFilter] = useState<string>("all");
   const [tableSort, setTableSort] = useState<{ col: string; dir: "asc" | "desc" }>({ col: "spend", dir: "desc" });
+  const [customSince, setCustomSince] = useState("");
+  const [customUntil, setCustomUntil] = useState("");
 
   // Load initial filters from URL Search Params on mount
   useEffect(() => {
@@ -130,8 +133,14 @@ export default function Dashboard() {
     setProgramFilter("all");
   };
 
-  const load = useCallback(async (force = false) => {
-    const cacheKey = `insights_${datePreset}`;
+  const load = useCallback(async (force = false, overrideDates?: { since: string; until: string }) => {
+    const effectiveSince = overrideDates?.since ?? customSince;
+    const effectiveUntil = overrideDates?.until ?? customUntil;
+
+    // For custom mode, require both dates
+    if (datePreset === "custom" && (!effectiveSince || !effectiveUntil)) return;
+
+    const cacheKey = datePreset === "custom" ? `insights_custom_${effectiveSince}_${effectiveUntil}` : `insights_${datePreset}`;
     if (!force) {
       try {
         const cached = sessionStorage.getItem(cacheKey);
@@ -149,7 +158,13 @@ export default function Dashboard() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/insights?date_preset=${datePreset}`);
+      let url: string;
+      if (datePreset === "custom") {
+        url = `/api/insights?since=${effectiveSince}&until=${effectiveUntil}`;
+      } else {
+        url = `/api/insights?date_preset=${datePreset}`;
+      }
+      const res = await fetch(url);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       const current = data.insights || [];
@@ -165,11 +180,13 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [datePreset]);
+  }, [datePreset, customSince, customUntil]);
 
   useEffect(() => {
+    // For custom mode, don't auto-load — require explicit "ค้นหา" click
+    if (datePreset === "custom") return;
     load();
-  }, [load]);
+  }, [load, datePreset]);
 
   const unparsedInsights = insights.filter((i) => !i.parsed.isParsed);
 
@@ -324,7 +341,7 @@ export default function Dashboard() {
                   key={d.value}
                   onClick={() => setDatePreset(d.value)}
                   className={`px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    datePreset === d.value
+                    datePreset === d.value && datePreset !== "custom"
                       ? "bg-indigo-600 text-white"
                       : "text-gray-400 hover:text-white"
                   }`}
@@ -333,6 +350,16 @@ export default function Dashboard() {
                 </button>
               ))}
             </div>
+            <DateRangePicker
+              since={customSince}
+              until={customUntil}
+              onApply={(s, u) => {
+                setDatePreset("custom");
+                setCustomSince(s);
+                setCustomUntil(u);
+                load(true, { since: s, until: u });
+              }}
+            />
             <button
               onClick={() => load(true)}
               disabled={loading}

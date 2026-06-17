@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchAllInsights } from "@/lib/meta";
 import { subDays, startOfMonth, endOfMonth, subMonths, format } from "date-fns";
+import { toZonedTime } from "date-fns-tz";
+
+const TZ = "Asia/Bangkok";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,7 +12,7 @@ function getPresetRanges(preset: string): {
   current: { since: string; until: string };
   previous: { since: string; until: string };
 } {
-  const today = new Date();
+  const today = toZonedTime(new Date(), TZ);
   
   let currentSince: Date;
   let currentUntil: Date;

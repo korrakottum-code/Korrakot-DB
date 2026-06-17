@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchAllCampaignData } from "@/lib/meta";
 import { subDays, startOfMonth, endOfMonth, subMonths, format } from "date-fns";
+import { toZonedTime } from "date-fns-tz";
+
+const TZ = "Asia/Bangkok";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function getPresetRange(preset: string): { since: string; until: string } {
-  const today = new Date();
+  const today = toZonedTime(new Date(), TZ);
   const fmt = "yyyy-MM-dd";
-
   switch (preset) {
     case "today":
       return { since: format(today, fmt), until: format(today, fmt) };

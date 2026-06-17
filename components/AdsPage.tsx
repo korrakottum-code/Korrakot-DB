@@ -373,7 +373,7 @@ export default function AdsPage() {
             </div>
             {lastUpdated && (
               <p className="text-xs text-gray-400 mt-0.5">
-                อัปเดตล่าสุด: {lastUpdated.toLocaleTimeString("th-TH")}
+                อัปเดตล่าสุด: {lastUpdated.toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok" })}
               </p>
             )}
           </div>

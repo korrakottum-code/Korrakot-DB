@@ -3,6 +3,15 @@
 import { useState, useRef, useEffect } from "react";
 import { ChevronLeft, ChevronRight, Calendar } from "lucide-react";
 
+const TZ = "Asia/Bangkok";
+
+/** Returns a Date object whose local getters (getFullYear, getMonth, etc.) reflect Bangkok time. */
+function nowBangkok(): Date {
+  const now = new Date();
+  const bangkokStr = now.toLocaleString("en-US", { timeZone: TZ });
+  return new Date(bangkokStr);
+}
+
 interface DateRangePickerProps {
   since: string;
   until: string;
@@ -29,7 +38,7 @@ function fmtDisplay(dateStr: string) {
 }
 
 function sub(days: number) {
-  const d = new Date();
+  const d = nowBangkok();
   d.setDate(d.getDate() - days);
   return d;
 }
@@ -53,8 +62,8 @@ export default function DateRangePicker({ since, until, onApply }: DateRangePick
   const [tempSince, setTempSince] = useState(since);
   const [tempUntil, setTempUntil] = useState(until);
   const [selecting, setSelecting] = useState<"since" | "until">("since");
-  const [viewMonth, setViewMonth] = useState(new Date().getMonth());
-  const [viewYear, setViewYear] = useState(new Date().getFullYear());
+  const [viewMonth, setViewMonth] = useState(() => nowBangkok().getMonth());
+  const [viewYear, setViewYear] = useState(() => nowBangkok().getFullYear());
   const ref = useRef<HTMLDivElement>(null);
 
   // Close on outside click
@@ -74,7 +83,7 @@ export default function DateRangePicker({ since, until, onApply }: DateRangePick
     setTempUntil(until);
   }, [since, until]);
 
-  const today = new Date();
+  const today = nowBangkok();
   const todayStr = fmtDate(today);
 
   const quickPresets = [

@@ -81,24 +81,7 @@ export default function Dashboard() {
   const [tableSort, setTableSort] = useState<{ col: string; dir: "asc" | "desc" }>({ col: "spend", dir: "desc" });
   const [customSince, setCustomSince] = useState("");
   const [customUntil, setCustomUntil] = useState("");
-  const [hideTest, setHideTest] = useState(true);
-  const [testBranchNames, setTestBranchNames] = useState<Set<string>>(new Set());
-
-  // Fetch test branch names from config
-  useEffect(() => {
-    fetch("/api/branches")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.branches) {
-          const testNames = new Set<string>();
-          for (const [, entry] of Object.entries(data.branches) as [string, { name: string; isTest: boolean }][]) {
-            if (entry.isTest) testNames.add(entry.name);
-          }
-          setTestBranchNames(testNames);
-        }
-      })
-      .catch(() => {});
-  }, []);
+  const [excludedBranches, setExcludedBranches] = useState<Set<string>>(new Set());
 
   // Load initial filters from URL Search Params on mount
   useEffect(() => {
@@ -150,6 +133,7 @@ export default function Dashboard() {
     setBranchFilter("all");
     setBranchNameFilter("all");
     setProgramFilter("all");
+    setExcludedBranches(new Set());
   };
 
   const load = useCallback(async (force = false, overrideDates?: { since: string; until: string }) => {
@@ -224,8 +208,8 @@ export default function Dashboard() {
 
   const filteredInsights = insights.filter((i) => {
     const b = i.parsed.branch || "";
-    // Exclude test branches
-    if (hideTest && testBranchNames.size > 0 && testBranchNames.has(b)) return false;
+    // Exclude user-hidden branches
+    if (excludedBranches.size > 0 && excludedBranches.has(b)) return false;
     if (tab === "branch") {
       if (branchFilter === "classgo" && !b.startsWith("Class Go")) return false;
       if (branchFilter === "class" && b.startsWith("Class Go")) return false;
@@ -247,8 +231,8 @@ export default function Dashboard() {
 
   const filteredPrevInsights = prevInsights.filter((i) => {
     const b = i.parsed.branch || "";
-    // Exclude test branches
-    if (hideTest && testBranchNames.size > 0 && testBranchNames.has(b)) return false;
+    // Exclude user-hidden branches
+    if (excludedBranches.size > 0 && excludedBranches.has(b)) return false;
     if (tab === "branch") {
       if (branchFilter === "classgo" && !b.startsWith("Class Go")) return false;
       if (branchFilter === "class" && b.startsWith("Class Go")) return false;
@@ -570,9 +554,9 @@ export default function Dashboard() {
               onProgramFilter={setProgramFilter}
               programOptions={programOptions}
               onClear={handleClearFilters}
-              hideTest={hideTest}
-              onHideTest={setHideTest}
-              testCount={testBranchNames.size}
+              excludedBranches={excludedBranches}
+              onExcludedBranches={setExcludedBranches}
+              allBranchNames={branchOptionsAll}
             />
           </div>
 

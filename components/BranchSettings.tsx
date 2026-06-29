@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   RefreshCw,
   Settings2,
+  Lock,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -30,6 +31,7 @@ export default function BranchSettings() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [search, setSearch] = useState("");
+  const [readOnly, setReadOnly] = useState(false);
 
   // New branch form
   const [newCode, setNewCode] = useState("");
@@ -47,6 +49,7 @@ export default function BranchSettings() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setBranches(data.branches || {});
+      setReadOnly(data.writable === false);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "โหลดข้อมูลไม่สำเร็จ");
     } finally {
@@ -233,6 +236,19 @@ export default function BranchSettings() {
           </div>
         )}
 
+        {/* Read-only banner */}
+        {readOnly && (
+          <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-4 flex items-start gap-3">
+            <Lock className="w-5 h-5 text-slate-400 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-slate-200">โหมดอ่านอย่างเดียว (Production)</p>
+              <p className="text-xs text-slate-400 mt-1">
+                ระบบ production ไม่รองรับการแก้ไขผ่าน UI — กรุณาแก้ไฟล์ <code className="bg-slate-700 px-1.5 py-0.5 rounded text-slate-300">data/branch-config.json</code> ใน repo แล้ว deploy ใหม่
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Search + Add button */}
         <div className="flex items-center gap-3">
           <div className="relative flex-1">
@@ -246,7 +262,10 @@ export default function BranchSettings() {
           </div>
           <button
             onClick={() => setShowAddForm(!showAddForm)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+            disabled={readOnly}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+              readOnly ? "bg-gray-800 text-gray-500 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-500"
+            }`}
           >
             <Plus className="w-4 h-4" />
             เพิ่มสาขา
@@ -354,7 +373,7 @@ export default function BranchSettings() {
                       <td className="py-3 px-4 text-center">
                         <button
                           onClick={() => handleToggleTest(code)}
-                          disabled={saving}
+                          disabled={saving || readOnly}
                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
                             entry.isTest
                               ? "bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25"
@@ -376,7 +395,7 @@ export default function BranchSettings() {
                       </td>
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {editingCode !== code && (
+                          {editingCode !== code && !readOnly && (
                             <button
                               onClick={() => startEdit(code)}
                               className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
@@ -385,6 +404,7 @@ export default function BranchSettings() {
                               <Pencil className="w-3.5 h-3.5" />
                             </button>
                           )}
+                          {!readOnly && (
                           <button
                             onClick={() => handleDelete(code)}
                             disabled={saving}
@@ -393,6 +413,7 @@ export default function BranchSettings() {
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
+                          )}
                         </div>
                       </td>
                     </tr>

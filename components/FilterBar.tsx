@@ -293,7 +293,7 @@ export default function FilterBar({
   const showBranchSelect = tab === "program" || tab === "creative";
 
   return (
-    <div className="flex flex-nowrap items-center gap-1 ml-auto text-[11px] sm:text-xs overflow-x-auto pb-1">
+    <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm overflow-x-auto pb-1">
       {showBranchGroup && (
         <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
           {(["all", "class", "classgo"] as const).map((f) => (

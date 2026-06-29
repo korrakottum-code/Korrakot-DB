@@ -293,15 +293,17 @@ export default function FilterBar({
   const showBranchSelect = tab === "program" || tab === "creative";
 
   return (
-    <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm overflow-x-auto pb-1">
+    <div className="flex flex-wrap items-center gap-2 text-sm bg-slate-900/60 border border-slate-800 rounded-xl px-3 py-2.5">
       {showBranchGroup && (
-        <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
+        <div className="flex flex-wrap items-center gap-1.5">
           {(["all", "class", "classgo"] as const).map((f) => (
             <button
               key={f}
               onClick={() => onBranchFilter(f)}
-              className={`px-2.5 py-1.5 rounded-lg font-medium transition-colors ${
-                branchFilter === f ? "bg-teal-600 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800"
+              className={`px-3 py-1.5 rounded-lg font-medium transition-colors border ${
+                branchFilter === f
+                  ? "bg-teal-600 text-white border-teal-500"
+                  : "text-slate-300 border-slate-700 hover:text-white hover:bg-slate-800 hover:border-slate-600"
               }`}
             >
               {f === "all" ? "ทั้งหมด" : f === "class" ? "Class" : "Class Go"}
@@ -315,39 +317,45 @@ export default function FilterBar({
 
       {showProgramButtons && (
         <>
-          <span className="text-slate-700 mx-1">|</span>
-          <button
-            onClick={() => onProgramFilter("all")}
-            className={`px-2.5 py-1.5 rounded-lg font-medium transition-colors ${
-              programFilter === "all" ? "bg-indigo-600 text-white" : "text-slate-300 hover:text-white hover:bg-slate-800"
-            }`}
-          >
-            ทุกโปรแกรม
-          </button>
-          {programOptions.map(({ code, label }) => (
+          <span className="text-slate-700 mx-0.5">|</span>
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
-              key={code}
-              onClick={() => onProgramFilter(code)}
-              className={`px-2.5 py-1.5 rounded-lg font-medium transition-colors ${
-                programFilter === code ? "bg-indigo-600 text-white" : "text-slate-300 hover:text-white hover:bg-slate-800"
+              onClick={() => onProgramFilter("all")}
+              className={`px-3 py-1.5 rounded-lg font-medium transition-colors border ${
+                programFilter === "all"
+                  ? "bg-indigo-600 text-white border-indigo-500"
+                  : "text-slate-300 border-slate-700 hover:text-white hover:bg-slate-800 hover:border-slate-600"
               }`}
             >
-              {label}
+              ทุกโปรแกรม
             </button>
-          ))}
+            {programOptions.map(({ code, label }) => (
+              <button
+                key={code}
+                onClick={() => onProgramFilter(code)}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors border ${
+                  programFilter === code
+                    ? "bg-indigo-600 text-white border-indigo-500"
+                    : "text-slate-300 border-slate-700 hover:text-white hover:bg-slate-800 hover:border-slate-600"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </>
       )}
 
-      <span className="text-slate-700 mx-1">|</span>
+      <span className="text-slate-700 mx-0.5">|</span>
       <ExcludeBranchesPopup
         allBranches={allBranchNames}
         excluded={excludedBranches}
         onChange={onExcludedBranches}
       />
-      <span className="text-slate-700 mx-1">|</span>
+      <span className="text-slate-700 mx-0.5">|</span>
       <button
         onClick={onClear}
-        className="px-2.5 py-1.5 rounded-lg font-medium transition-colors text-slate-200 bg-slate-800 hover:bg-slate-700"
+        className="px-3 py-1.5 rounded-lg font-medium transition-colors text-slate-300 border border-slate-700 bg-slate-800 hover:bg-slate-700 hover:border-slate-600"
       >
         ล้างตัวกรอง
       </button>

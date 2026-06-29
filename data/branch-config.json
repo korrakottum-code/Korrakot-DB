@@ -38,6 +38,6 @@
     "PKT": { "name": "ภูเก็ต", "isTest": false },
     "HHN": { "name": "หัวหิน", "isTest": false },
     "SKA": { "name": "สงขลา", "isTest": false },
-    "HR": { "name": "ทรัพยากรบุคคล", "isTest": true }
+    "HR": { "name": "ทรัพยากรบุคคล", "isTest": false }
   }
 }

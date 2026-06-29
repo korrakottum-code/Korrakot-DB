@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, X, FlaskConical } from "lucide-react";
+import { ChevronDown, X, EyeOff } from "lucide-react";
 import type { TabKey } from "./types";
 
 interface Props {
@@ -15,9 +15,9 @@ interface Props {
   onProgramFilter: (v: string) => void;
   programOptions: { code: string; label: string }[];
   onClear: () => void;
-  hideTest: boolean;
-  onHideTest: (v: boolean) => void;
-  testCount?: number;
+  excludedBranches: Set<string>;
+  onExcludedBranches: (v: Set<string>) => void;
+  allBranchNames: string[];
 }
 
 function BranchDropdown({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) {
@@ -111,6 +111,168 @@ function BranchDropdown({ value, options, onChange }: { value: string; options: 
   );
 }
 
+/* ── Multi-select exclude branches popup ── */
+function ExcludeBranchesPopup({
+  allBranches,
+  excluded,
+  onChange,
+}: {
+  allBranches: string[];
+  excluded: Set<string>;
+  onChange: (v: Set<string>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const filtered = allBranches.filter((b) => b.toLowerCase().includes(query.trim().toLowerCase()));
+
+  const toggle = (branch: string) => {
+    const next = new Set(excluded);
+    if (next.has(branch)) next.delete(branch);
+    else next.add(branch);
+    onChange(next);
+  };
+
+  const selectAll = () => onChange(new Set());
+  const excludeFiltered = () => {
+    const next = new Set(excluded);
+    filtered.forEach((b) => next.add(b));
+    onChange(next);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg font-medium transition-colors ${
+          excluded.size > 0
+            ? "bg-rose-600/20 text-rose-300 border border-rose-600/30"
+            : "text-slate-400 hover:text-white hover:bg-slate-800"
+        }`}
+      >
+        <EyeOff className="w-3 h-3" />
+        {excluded.size > 0 ? `ซ่อน ${excluded.size} สาขา` : "ซ่อนสาขา"}
+      </button>
+
+      {open && (
+        <>
+          {/* Backdrop */}
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+
+          {/* Desktop popup */}
+          <div className="hidden sm:block absolute right-0 top-full mt-2 z-50 w-[320px] bg-slate-900 border border-slate-700 rounded-xl shadow-2xl shadow-black/40 overflow-hidden">
+            <div className="p-3 border-b border-slate-800">
+              <p className="text-sm font-semibold text-white mb-2">เลือกสาขาที่ต้องการซ่อน</p>
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="ค้นหา..."
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
+                autoFocus
+              />
+              <div className="flex gap-2 mt-2">
+                <button onClick={selectAll} className="text-[10px] text-indigo-400 hover:text-indigo-300">แสดงทั้งหมด</button>
+                <span className="text-slate-700">|</span>
+                <button onClick={excludeFiltered} className="text-[10px] text-rose-400 hover:text-rose-300">ซ่อนทั้งหมด</button>
+              </div>
+            </div>
+            <div className="max-h-[280px] overflow-y-auto p-2">
+              {filtered.map((branch) => {
+                const isExcluded = excluded.has(branch);
+                return (
+                  <button
+                    key={branch}
+                    onClick={() => toggle(branch)}
+                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-left transition-colors ${
+                      isExcluded ? "text-slate-500 hover:bg-slate-800" : "text-white hover:bg-slate-800"
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
+                      isExcluded ? "border-rose-500/50 bg-rose-500/20" : "border-slate-600 bg-slate-800"
+                    }`}>
+                      {isExcluded && <EyeOff className="w-2.5 h-2.5 text-rose-400" />}
+                    </div>
+                    <span className={isExcluded ? "line-through" : ""}>{branch}</span>
+                  </button>
+                );
+              })}
+              {filtered.length === 0 && (
+                <div className="py-6 text-center text-xs text-slate-500">ไม่พบสาขา</div>
+              )}
+            </div>
+            <div className="p-2 border-t border-slate-800">
+              <button
+                onClick={() => setOpen(false)}
+                className="w-full bg-slate-800 hover:bg-slate-700 rounded-lg py-2 text-xs font-medium text-slate-200 transition-colors"
+              >
+                ปิด
+              </button>
+            </div>
+          </div>
+
+          {/* Mobile fullscreen */}
+          <div className="sm:hidden fixed inset-0 z-50 bg-slate-950 text-white flex flex-col">
+            <div className="flex items-center justify-between px-4 py-4 border-b border-slate-800">
+              <div>
+                <p className="text-base font-bold">ซ่อนสาขา</p>
+                <p className="text-xs text-slate-400">กดเพื่อซ่อน/แสดง ({excluded.size} ซ่อนอยู่)</p>
+              </div>
+              <button onClick={() => setOpen(false)} className="p-2 rounded-xl bg-slate-900 border border-slate-700">
+                <X className="w-5 h-5 text-slate-300" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3 border-b border-slate-800">
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="ค้นหาสาขา..."
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-base text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
+              />
+              <div className="flex gap-3">
+                <button onClick={selectAll} className="text-sm text-indigo-400">แสดงทั้งหมด</button>
+                <button onClick={excludeFiltered} className="text-sm text-rose-400">ซ่อนทั้งหมด</button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="space-y-1">
+                {filtered.map((branch) => {
+                  const isExcluded = excluded.has(branch);
+                  return (
+                    <button
+                      key={branch}
+                      onClick={() => toggle(branch)}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-left border transition-colors ${
+                        isExcluded
+                          ? "text-slate-500 border-slate-800 bg-slate-900/50"
+                          : "text-white border-slate-700 bg-slate-900"
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded border flex-shrink-0 flex items-center justify-center ${
+                        isExcluded ? "border-rose-500/50 bg-rose-500/20" : "border-slate-600 bg-slate-800"
+                      }`}>
+                        {isExcluded && <EyeOff className="w-3 h-3 text-rose-400" />}
+                      </div>
+                      <span className={isExcluded ? "line-through" : ""}>{branch}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="p-4 border-t border-slate-800 bg-slate-950">
+              <button
+                onClick={() => setOpen(false)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl py-3 text-sm font-semibold text-slate-200"
+              >
+                ปิด
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function FilterBar({
   tab,
   branchFilter,
@@ -122,9 +284,9 @@ export default function FilterBar({
   onProgramFilter,
   programOptions,
   onClear,
-  hideTest,
-  onHideTest,
-  testCount = 0,
+  excludedBranches,
+  onExcludedBranches,
+  allBranchNames,
 }: Props) {
   const showBranchGroup = tab === "branch" || tab === "program" || tab === "creative";
   const showProgramButtons = tab === "branch" || tab === "creative";
@@ -177,16 +339,11 @@ export default function FilterBar({
       )}
 
       <span className="text-slate-700 mx-1">|</span>
-      <button
-        onClick={() => onHideTest(!hideTest)}
-        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg font-medium transition-colors ${
-          hideTest ? "bg-amber-600/20 text-amber-300 border border-amber-600/30" : "text-slate-400 hover:text-white hover:bg-slate-800"
-        }`}
-        title={hideTest ? "กำลังซ่อนสาขาเทส" : "แสดงสาขาเทสอยู่"}
-      >
-        <FlaskConical className="w-3 h-3" />
-        {hideTest ? `ซ่อนเทส${testCount > 0 ? ` (${testCount})` : ""}` : "แสดงเทส"}
-      </button>
+      <ExcludeBranchesPopup
+        allBranches={allBranchNames}
+        excluded={excludedBranches}
+        onChange={onExcludedBranches}
+      />
       <span className="text-slate-700 mx-1">|</span>
       <button
         onClick={onClear}

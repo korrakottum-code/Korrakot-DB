@@ -30,6 +30,14 @@
     "BPG": { "name": "Class Go บางพลี", "isTest": false },
     "N-BPG": { "name": "Class Go บางพลี", "isTest": false },
     "LEI": { "name": "เลย", "isTest": false },
-    "HB": { "name": "หน้าบ้าน", "isTest": false }
+    "HB": { "name": "หน้าบ้าน", "isTest": false },
+    "KBI": { "name": "กระบี่", "isTest": false },
+    "SCG": { "name": "Shape Class Go", "isTest": false },
+    "NRT": { "name": "นครศรีธรรมราช", "isTest": false },
+    "SNI": { "name": "สุราษฎร์ธานี", "isTest": false },
+    "PKT": { "name": "ภูเก็ต", "isTest": false },
+    "HHN": { "name": "หัวหิน", "isTest": false },
+    "SKA": { "name": "สงขลา", "isTest": false },
+    "HR": { "name": "ทรัพยากรบุคคล", "isTest": true }
   }
 }

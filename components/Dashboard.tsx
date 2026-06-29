@@ -543,6 +543,8 @@ export default function Dashboard() {
                 {t.label}
               </button>
             ))}
+          </div>
+          <div className="pb-4">
             <FilterBar
               tab={tab}
               branchFilter={branchFilter}

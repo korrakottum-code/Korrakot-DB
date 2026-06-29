@@ -1,3 +1,4 @@
+// Hardcoded fallback branch map
 export const BRANCH_MAP: Record<string, string> = {
   KKC: "กังสดาล",
   UDN: "อุดร",
@@ -31,6 +32,70 @@ export const BRANCH_MAP: Record<string, string> = {
   LEI: "เลย",
   HB: "หน้าบ้าน",
 };
+
+/* ─── Dynamic branch config from JSON file ─── */
+
+interface BranchEntry {
+  name: string;
+  isTest: boolean;
+}
+
+interface BranchConfig {
+  branches: Record<string, BranchEntry>;
+}
+
+function readBranchConfig(): BranchConfig {
+  // Only run on server side
+  if (typeof window !== "undefined") return { branches: {} };
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require("fs");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require("path");
+    const configPath = path.join(process.cwd(), "data", "branch-config.json");
+    const raw = fs.readFileSync(configPath, "utf-8");
+    return JSON.parse(raw);
+  } catch {
+    return { branches: {} };
+  }
+}
+
+/**
+ * Returns the merged branch map: hardcoded BRANCH_MAP + JSON config.
+ * JSON config overrides hardcoded values.
+ */
+export function getBranchMap(): Record<string, string> {
+  const config = readBranchConfig();
+  const merged = { ...BRANCH_MAP };
+  for (const [code, entry] of Object.entries(config.branches)) {
+    merged[code] = entry.name;
+  }
+  return merged;
+}
+
+/**
+ * Returns a Set of branch codes that are marked as test branches.
+ */
+export function getTestBranchCodes(): Set<string> {
+  const config = readBranchConfig();
+  const testCodes = new Set<string>();
+  for (const [code, entry] of Object.entries(config.branches)) {
+    if (entry.isTest) testCodes.add(code);
+  }
+  return testCodes;
+}
+
+/**
+ * Returns a Set of branch names that are marked as test branches.
+ */
+export function getTestBranchNames(): Set<string> {
+  const config = readBranchConfig();
+  const testNames = new Set<string>();
+  for (const [, entry] of Object.entries(config.branches)) {
+    if (entry.isTest) testNames.add(entry.name);
+  }
+  return testNames;
+}
 
 // Asset (campaign type) codes
 export const ASSET_MAP: Record<string, string> = {
@@ -113,13 +178,14 @@ export interface ParsedAdName {
 
 export function parseAdName(adName: string): ParsedAdName {
   const raw = adName.trim();
+  const branchMap = getBranchMap();
 
   // Find branch code anywhere in the tokens (not necessarily first)
   const parts = raw.split(" ");
   let branchCode = "";
   let branchIndex = -1;
   for (let i = 0; i < parts.length; i++) {
-    if (BRANCH_MAP[parts[i].toUpperCase()]) {
+    if (branchMap[parts[i].toUpperCase()]) {
       branchCode = parts[i].toUpperCase();
       branchIndex = i;
       break;
@@ -130,7 +196,7 @@ export function parseAdName(adName: string): ParsedAdName {
     branchCode = parts[0] || "";
     branchIndex = 0;
   }
-  const branch = BRANCH_MAP[branchCode] || branchCode;
+  const branch = branchMap[branchCode] || branchCode;
 
   // AW code = everything after branch token
   const awCode = parts.slice(branchIndex + 1).join(" ").trim();

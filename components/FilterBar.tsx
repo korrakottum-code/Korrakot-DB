@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, X } from "lucide-react";
+import { ChevronDown, X, FlaskConical } from "lucide-react";
 import type { TabKey } from "./types";
 
 interface Props {
@@ -15,6 +15,9 @@ interface Props {
   onProgramFilter: (v: string) => void;
   programOptions: { code: string; label: string }[];
   onClear: () => void;
+  hideTest: boolean;
+  onHideTest: (v: boolean) => void;
+  testCount?: number;
 }
 
 function BranchDropdown({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) {
@@ -119,6 +122,9 @@ export default function FilterBar({
   onProgramFilter,
   programOptions,
   onClear,
+  hideTest,
+  onHideTest,
+  testCount = 0,
 }: Props) {
   const showBranchGroup = tab === "branch" || tab === "program" || tab === "creative";
   const showProgramButtons = tab === "branch" || tab === "creative";
@@ -170,6 +176,17 @@ export default function FilterBar({
         </>
       )}
 
+      <span className="text-slate-700 mx-1">|</span>
+      <button
+        onClick={() => onHideTest(!hideTest)}
+        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg font-medium transition-colors ${
+          hideTest ? "bg-amber-600/20 text-amber-300 border border-amber-600/30" : "text-slate-400 hover:text-white hover:bg-slate-800"
+        }`}
+        title={hideTest ? "กำลังซ่อนสาขาเทส" : "แสดงสาขาเทสอยู่"}
+      >
+        <FlaskConical className="w-3 h-3" />
+        {hideTest ? `ซ่อนเทส${testCount > 0 ? ` (${testCount})` : ""}` : "แสดงเทส"}
+      </button>
       <span className="text-slate-700 mx-1">|</span>
       <button
         onClick={onClear}

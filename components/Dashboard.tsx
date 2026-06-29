@@ -11,7 +11,8 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
-import { RefreshCw, AlertTriangle, MapPin, Layers, Gauge, Target } from "lucide-react";
+import { RefreshCw, AlertTriangle, MapPin, Layers, Gauge, Target, Settings2 } from "lucide-react";
+import Link from "next/link";
 import DateRangePicker from "@/components/DateRangePicker";
 import { BRANCH_MAP, PROGRAM_MAP } from "@/lib/parser";
 import type { AdInsight } from "@/lib/meta";
@@ -80,6 +81,24 @@ export default function Dashboard() {
   const [tableSort, setTableSort] = useState<{ col: string; dir: "asc" | "desc" }>({ col: "spend", dir: "desc" });
   const [customSince, setCustomSince] = useState("");
   const [customUntil, setCustomUntil] = useState("");
+  const [hideTest, setHideTest] = useState(true);
+  const [testBranchNames, setTestBranchNames] = useState<Set<string>>(new Set());
+
+  // Fetch test branch names from config
+  useEffect(() => {
+    fetch("/api/branches")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.branches) {
+          const testNames = new Set<string>();
+          for (const [, entry] of Object.entries(data.branches) as [string, { name: string; isTest: boolean }][]) {
+            if (entry.isTest) testNames.add(entry.name);
+          }
+          setTestBranchNames(testNames);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Load initial filters from URL Search Params on mount
   useEffect(() => {
@@ -205,6 +224,8 @@ export default function Dashboard() {
 
   const filteredInsights = insights.filter((i) => {
     const b = i.parsed.branch || "";
+    // Exclude test branches
+    if (hideTest && testBranchNames.size > 0 && testBranchNames.has(b)) return false;
     if (tab === "branch") {
       if (branchFilter === "classgo" && !b.startsWith("Class Go")) return false;
       if (branchFilter === "class" && b.startsWith("Class Go")) return false;
@@ -226,6 +247,8 @@ export default function Dashboard() {
 
   const filteredPrevInsights = prevInsights.filter((i) => {
     const b = i.parsed.branch || "";
+    // Exclude test branches
+    if (hideTest && testBranchNames.size > 0 && testBranchNames.has(b)) return false;
     if (tab === "branch") {
       if (branchFilter === "classgo" && !b.startsWith("Class Go")) return false;
       if (branchFilter === "class" && b.startsWith("Class Go")) return false;
@@ -368,6 +391,14 @@ export default function Dashboard() {
               <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
               {loading ? "กำลังโหลด..." : "รีเฟรช"}
             </button>
+            <Link
+              href="/settings"
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-gray-300 transition-colors"
+              title="ตั้งค่าสาขา"
+            >
+              <Settings2 className="w-4 h-4" />
+              <span className="hidden sm:inline">ตั้งค่า</span>
+            </Link>
           </div>
         </div>
       </div>
@@ -437,6 +468,13 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
+            <Link
+              href="/settings"
+              className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-600/20 hover:bg-orange-600/30 border border-orange-600/40 rounded-lg text-xs text-orange-300 font-medium transition-colors"
+            >
+              <Settings2 className="w-3.5 h-3.5" />
+              เพิ่มสาขาในหน้าตั้งค่า
+            </Link>
           </div>
         )}
 
@@ -532,6 +570,9 @@ export default function Dashboard() {
               onProgramFilter={setProgramFilter}
               programOptions={programOptions}
               onClear={handleClearFilters}
+              hideTest={hideTest}
+              onHideTest={setHideTest}
+              testCount={testBranchNames.size}
             />
           </div>
 

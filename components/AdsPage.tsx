@@ -606,13 +606,23 @@ export default function AdsPage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs sm:text-sm" id="ads-table">
-                <thead className="sticky top-0 bg-gray-900 z-10">
+                <thead className="sticky top-0 bg-gray-900 z-20">
                   <tr className="border-b border-gray-800">
-                    <th className="text-left py-2.5 px-3 text-gray-500 font-medium w-8">#</th>
+                    <th className="text-left py-2.5 px-3 text-gray-500 font-medium w-8 sticky left-0 z-20 bg-gray-900">#</th>
+                    <th
+                      onClick={() => handleSort("accountId")}
+                      className="py-2.5 px-3 text-gray-400 font-medium cursor-pointer select-none hover:text-white transition-colors text-left sticky left-[32px] z-20 bg-gray-900 min-w-[140px]"
+                    >
+                      <span className="inline-flex items-center gap-0.5">Account <SortIcon col="accountId" /></span>
+                    </th>
+                    <th
+                      onClick={() => handleSort("campaignName")}
+                      className="py-2.5 px-3 text-gray-400 font-medium cursor-pointer select-none hover:text-white transition-colors text-left sticky left-[172px] z-20 bg-gray-900 min-w-[250px] after:content-[''] after:absolute after:right-0 after:top-0 after:bottom-0 after:w-[3px] after:bg-gradient-to-r after:from-gray-700/50 after:to-transparent"
+                    >
+                      <span className="inline-flex items-center gap-0.5">Campaign Name <SortIcon col="campaignName" /></span>
+                    </th>
                     {(
                       [
-                        { col: "accountId" as SortCol, label: "Account", align: "left" },
-                        { col: "campaignName" as SortCol, label: "Campaign Name", align: "left" },
                         { col: "tag" as SortCol, label: "Tag", align: "left" },
                         { col: "spent" as SortCol, label: "Spent", align: "right" },
                         { col: "budget" as SortCol, label: "Budget", align: "right" },
@@ -641,16 +651,16 @@ export default function AdsPage() {
                   {sorted.map((row, i) => (
                     <tr
                       key={`${row.campaignId}-${row.accountId}`}
-                      className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors"
+                      className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors group"
                     >
-                      <td className="py-2.5 px-3 text-gray-500 text-[11px]">{i + 1}</td>
-                      <td className="py-2.5 px-3">
+                      <td className="py-2.5 px-3 text-gray-500 text-[11px] sticky left-0 z-10 bg-gray-900 group-hover:bg-gray-800">{i + 1}</td>
+                      <td className="py-2.5 px-3 sticky left-[32px] z-10 bg-gray-900 group-hover:bg-gray-800 min-w-[140px]">
                         <div className="flex flex-col">
                           <span className="text-white text-xs font-medium">{row.accountName}</span>
                           <span className="text-gray-500 text-[10px] font-mono">{row.accountId}</span>
                         </div>
                       </td>
-                      <td className="py-2.5 px-3 text-white max-w-[300px]">
+                      <td className="py-2.5 px-3 text-white max-w-[300px] sticky left-[172px] z-10 bg-gray-900 group-hover:bg-gray-800 min-w-[250px] relative after:content-[''] after:absolute after:right-0 after:top-0 after:bottom-0 after:w-[3px] after:bg-gradient-to-r after:from-gray-700/50 after:to-transparent">
                         <span className="truncate block" title={row.campaignName}>
                           {row.campaignName}
                         </span>

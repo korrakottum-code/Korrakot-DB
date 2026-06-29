@@ -16,6 +16,18 @@ interface BranchConfig {
   branches: Record<string, BranchEntry>;
 }
 
+function isWritable(): boolean {
+  try {
+    // Try to write a temp file to check if filesystem is writable
+    const testPath = path.join(path.dirname(CONFIG_PATH), ".write-test");
+    fs.writeFileSync(testPath, "test", "utf-8");
+    fs.unlinkSync(testPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function readConfig(): BranchConfig {
   try {
     const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
@@ -31,15 +43,23 @@ function writeConfig(config: BranchConfig): void {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
 }
 
-// GET /api/branches — return all branches
+// GET /api/branches — return all branches + writable status
 export async function GET() {
   const config = readConfig();
-  return NextResponse.json(config);
+  const writable = isWritable();
+  return NextResponse.json({ ...config, writable });
 }
 
 // POST /api/branches — add or update a branch
 // Body: { code: string, name: string, isTest?: boolean }
 export async function POST(req: NextRequest) {
+  if (!isWritable()) {
+    return NextResponse.json(
+      { error: "ระบบ production ไม่รองรับการแก้ไข — กรุณาแก้ไฟล์ data/branch-config.json ใน repo แล้ว deploy ใหม่" },
+      { status: 403 }
+    );
+  }
+
   try {
     const body = await req.json();
     const { code, name, isTest } = body as { code?: string; name?: string; isTest?: boolean };
@@ -69,6 +89,13 @@ export async function POST(req: NextRequest) {
 
 // DELETE /api/branches?code=XXX — delete a branch
 export async function DELETE(req: NextRequest) {
+  if (!isWritable()) {
+    return NextResponse.json(
+      { error: "ระบบ production ไม่รองรับการลบ — กรุณาแก้ไฟล์ data/branch-config.json ใน repo แล้ว deploy ใหม่" },
+      { status: 403 }
+    );
+  }
+
   const { searchParams } = new URL(req.url);
   const code = searchParams.get("code")?.toUpperCase().trim();
 

@@ -82,6 +82,19 @@ export default function Dashboard() {
   const [customSince, setCustomSince] = useState("");
   const [customUntil, setCustomUntil] = useState("");
   const [excludedBranches, setExcludedBranches] = useState<Set<string>>(new Set());
+  const [dynamicBranchCodes, setDynamicBranchCodes] = useState<Set<string>>(new Set());
+
+  // Load dynamic branch codes (added via /settings) so unknown-branch detection stays in sync
+  useEffect(() => {
+    fetch("/api/branches")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.branches) {
+          setDynamicBranchCodes(new Set(Object.keys(data.branches)));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Load initial filters from URL Search Params on mount
   useEffect(() => {
@@ -198,7 +211,7 @@ export default function Dashboard() {
     const map: Record<string, { spend: number; example: string }> = {};
     for (const i of insights) {
       const bc = i.parsed.branchCode;
-      if (bc && !BRANCH_MAP[bc] && !['IG', 'หน้าบ้าน'].includes(bc)) {
+      if (bc && !BRANCH_MAP[bc] && !dynamicBranchCodes.has(bc) && !['IG', 'หน้าบ้าน'].includes(bc)) {
         if (!map[bc]) map[bc] = { spend: 0, example: i.adName };
         map[bc].spend += i.spend;
       }

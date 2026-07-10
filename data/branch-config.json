@@ -38,6 +38,8 @@
     "PKT": { "name": "ภูเก็ต", "isTest": false },
     "HHN": { "name": "หัวหิน", "isTest": false },
     "SKA": { "name": "สงขลา", "isTest": false },
-    "HR": { "name": "ทรัพยากรบุคคล", "isTest": false }
+    "HR": { "name": "ทรัพยากรบุคคล", "isTest": false },
+    "RSU": { "name": "ฟิวเจอร์พาร์ครังสิต", "isTest": false },
+    "UNI": { "name": "ยูเนี่ยนมอลล์", "isTest": false }
   }
 }

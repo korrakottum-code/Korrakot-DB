@@ -10,7 +10,9 @@ import {
   BarChart3,
   CheckCircle2,
   Clock3,
+  Download,
   Gauge,
+  Printer,
   RefreshCw,
   ShieldCheck,
   Target,
@@ -26,6 +28,7 @@ import type {
   ReportingPeriods,
   ReportingTotals,
 } from "@/lib/reporting";
+import { sumReportingRows } from "@/lib/reporting";
 import {
   CPI_TARGET,
   CPL_TARGET_MAX,
@@ -34,6 +37,7 @@ import {
   isExcludedManagementGroup,
   type Decision,
 } from "@/lib/management-rules";
+import { buildReportCsv } from "@/lib/report-export";
 
 const PERIODS = [
   { value: "today", label: "วันนี้" },
@@ -58,6 +62,7 @@ type ReportResponse = {
   failures: Array<{ scope: string; accountId?: string; accountName?: string; message: string }>;
   asOf: string;
   generatedAt: string;
+  snapshotId: string;
   cache: { hit: boolean; fetchedAt: string; asOf: string };
 };
 
@@ -235,12 +240,53 @@ export default function ManagementReport() {
     return [...map.entries()].sort((a, b) => b[1].spend - a[1].spend).slice(0, 5);
   }, [filteredInsights]);
 
-  const maxDailySpend = Math.max(...(report?.dailySeries || []).map((row) => row.spend), 1);
+  const exportDailySeries = useMemo<DailyReportingRow[]>(() => {
+    if (!report) return [];
+    if (objectiveFilter === "ALL") return report.dailySeries;
+    const byDate = new Map<string, AdInsight[]>();
+    for (const row of filteredInsights) {
+      const date = row.date;
+      if (!date) continue;
+      const rows = byDate.get(date) || [];
+      rows.push(row);
+      byDate.set(date, rows);
+    }
+    return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, rows]) => ({ date, ...sumReportingRows(rows) }));
+  }, [filteredInsights, objectiveFilter, report]);
+
+  const maxDailySpend = Math.max(...(exportDailySeries || []).map((row) => row.spend), 1);
   const totalChange = report ? pctChange(report.totals.spend, report.previousTotals.spend) : null;
   const resultChange = report ? pctChange(report.totals.inbox + report.totals.leads, report.previousTotals.inbox + report.previousTotals.leads) : null;
 
+  const exportCsv = () => {
+    if (!report) return;
+    const csv = buildReportCsv(
+      {
+        snapshotId: report.snapshotId,
+        periodSince: report.periods.current.since,
+        periodUntil: report.periods.current.until,
+        comparisonSince: report.periods.comparison.since,
+        comparisonUntil: report.periods.comparison.until,
+        objective: objectiveFilter,
+        timezone: report.periods.timezone,
+        asOf: report.asOf,
+        generatedAt: report.generatedAt,
+        coverage: `${report.coverage.accountsComplete}/${report.coverage.accountsTotal} accounts, ${report.coverage.failureCount} failures`,
+        confidence: report.objectiveBreakdown.map((item) => `${item.objective}:${item.confidence.level}`).join(" | ") || "ยังไม่มีข้อมูล",
+      },
+      branchSummaries,
+      exportDailySeries
+    );
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `management-report-${report.periods.current.since}-${report.periods.current.until}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
-    <main className="min-h-screen bg-gray-950 text-white">
+    <main className="management-report min-h-screen bg-gray-950 text-white">
       <header className="border-b border-gray-800 bg-gray-900 px-4 py-4 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -263,6 +309,8 @@ export default function ManagementReport() {
             <button onClick={() => load(true)} disabled={refreshing} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium hover:bg-indigo-500 disabled:opacity-50">
               <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} /> รีเฟรช
             </button>
+            <button onClick={exportCsv} disabled={!report} data-export-control className="flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-50"><Download className="h-3.5 w-3.5" /> CSV</button>
+            <button onClick={() => window.print()} disabled={!report} data-export-control className="flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-50"><Printer className="h-3.5 w-3.5" /> พิมพ์/PDF</button>
             <LogoutButton />
           </div>
         </div>
@@ -285,7 +333,7 @@ export default function ManagementReport() {
                     {resultChange == null ? "" : resultChange >= 0 ? ` และผลลัพธ์รวมเพิ่ม ${resultChange.toFixed(1)}%` : ` แต่ผลลัพธ์รวมลด ${Math.abs(resultChange).toFixed(1)}%`}
                   </p>
                 </div>
-                <div className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs text-slate-300"><Clock3 className="h-3.5 w-3.5 text-slate-400" /> As-of {new Date(report.asOf).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}</div>
+                <div className="flex flex-col items-end gap-1 text-xs text-slate-300"><div className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2"><Clock3 className="h-3.5 w-3.5 text-slate-400" /> As-of {new Date(report.asOf).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}</div><p className="print-snapshot hidden text-[10px] text-slate-500">Snapshot: {report.snapshotId}</p></div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-amber-200">
                 {report.periods.notes.map((note) => <span key={note} className="rounded-full border border-amber-700/40 bg-amber-950/30 px-3 py-1">⚠️ {note}</span>)}
@@ -337,7 +385,7 @@ export default function ManagementReport() {
             </section>
 
             <section className="grid gap-5 lg:grid-cols-[1.25fr_1fr]">
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Daily Trend</p><h2 className="mt-1 text-lg font-semibold">ยอดใช้จ่ายรายวัน</h2></div><div className="flex gap-1 overflow-x-auto rounded-lg bg-slate-800 p-1">{["ALL", ...Array.from(new Set(report.insights.map((row) => normalizeObjective(row.objective))))].slice(0, 8).map((objective) => <button key={objective} onClick={() => setObjectiveFilter(objective)} className={`rounded px-2 py-1 text-[10px] ${objectiveFilter === objective ? "bg-indigo-600 text-white" : "text-slate-400"}`}>{objective === "ALL" ? "ทุก Objective" : objective}</button>)}</div></div><div className="mt-4 space-y-2">{report.dailySeries.map((day) => <div key={day.date} className="grid grid-cols-[75px_1fr_70px] items-center gap-2 text-xs"><span className="text-slate-500">{day.date.slice(5)}</span><div className="h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-cyan-500" style={{ width: `${(day.spend / maxDailySpend) * 100}%` }} /></div><span className="text-right text-emerald-300">{fmtMoney(day.spend)}</span></div>)}{report.dailySeries.length === 0 && <p className="py-8 text-center text-sm text-slate-500">ไม่มี Daily data</p>}</div></div>
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Daily Trend</p><h2 className="mt-1 text-lg font-semibold">ยอดใช้จ่ายรายวัน</h2></div><div className="flex gap-1 overflow-x-auto rounded-lg bg-slate-800 p-1">{["ALL", ...Array.from(new Set(report.insights.map((row) => normalizeObjective(row.objective))))].slice(0, 8).map((objective) => <button key={objective} onClick={() => setObjectiveFilter(objective)} className={`rounded px-2 py-1 text-[10px] ${objectiveFilter === objective ? "bg-indigo-600 text-white" : "text-slate-400"}`}>{objective === "ALL" ? "ทุก Objective" : objective}</button>)}</div></div><div className="mt-4 space-y-2">{exportDailySeries.map((day) => <div key={day.date} className="grid grid-cols-[75px_1fr_70px] items-center gap-2 text-xs"><span className="text-slate-500">{day.date.slice(5)}</span><div className="h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-cyan-500" style={{ width: `${(day.spend / maxDailySpend) * 100}%` }} /></div><span className="text-right text-emerald-300">{fmtMoney(day.spend)}</span></div>)}{exportDailySeries.length === 0 && <p className="py-8 text-center text-sm text-slate-500">ไม่มี Daily data</p>}</div></div>
               <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 sm:p-5"><div className="flex items-center justify-between"><div><p className="text-xs font-semibold uppercase tracking-wider text-amber-300">Creative / Program signal</p><h2 className="mt-1 text-lg font-semibold">สิ่งที่ควรเปิดดูต่อ</h2></div><TrendingDown className="h-5 w-5 text-amber-300" /></div><p className="mt-4 text-xs text-slate-400">Program ที่ใช้จ่ายสูงสุด</p><p className="mt-1 text-xl font-semibold text-white">{topProgram ? `${topProgram[0]} · ${fmtMoney(topProgram[1])}` : "ไม่มีข้อมูล"}</p><p className="mt-4 text-xs text-slate-400">Creative ที่ใช้จ่ายสูงสุด (ยังไม่ใช่ Best)</p><div className="mt-2 space-y-2">{topCreative.map(([name, value]) => <div key={name} className="flex items-center justify-between gap-2 rounded-lg bg-slate-950/60 px-3 py-2 text-xs"><span className="truncate text-slate-300">{name}</span><span className="shrink-0 text-emerald-300">{fmtMoney(value.spend)}</span></div>)}</div><p className="mt-3 text-[11px] text-amber-200">รายการนี้เรียงตาม Spend เท่านั้น ไม่สรุปว่าเป็น Creative ที่ดีที่สุดจนกว่าจะมี Sample และ Confidence เพียงพอ</p></div>
             </section>
 

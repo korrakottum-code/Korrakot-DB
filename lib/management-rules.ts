@@ -21,8 +21,14 @@ export function decisionForBranch(input: {
   inbox: number;
   leads: number;
   objectiveKnown: boolean;
+  objectiveCount?: number;
+  objectiveMetric?: "inbox" | "leads" | "clicks" | "impressions" | "unknown";
 }): DecisionResult {
   if (!input.objectiveKnown) return { decision: "Data incomplete", confidence: "Low", reason: "ยังไม่พบ Objective ที่เชื่อถือได้ จึงไม่จัดอันดับด้วย Inbox" };
+  if ((input.objectiveCount || 0) > 1) return { decision: "Review", confidence: "Low", reason: "มีหลาย Objective รวมกัน ต้องแยกดูแต่ละ Objective ก่อนตัดสินใจ" };
+  if (input.objectiveMetric && !["inbox", "leads"].includes(input.objectiveMetric)) {
+    return { decision: "Data incomplete", confidence: "Low", reason: "Objective นี้ใช้ผลลัพธ์คนละชนิด จึงยังไม่ใช้ CPI/CPL จัดอันดับรวม" };
+  }
   const sample = input.leads > 0 ? input.leads : input.inbox;
   if (sample < 10) return { decision: "Low sample", confidence: "Low", reason: `มีผลลัพธ์เพียง ${sample} รายการ ต่ำกว่าเกณฑ์ 10 รายการ` };
   if (input.leads >= 10) {

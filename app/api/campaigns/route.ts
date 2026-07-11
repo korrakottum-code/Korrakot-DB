@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchAllCampaignData } from "@/lib/meta";
+import { dedupeAccounts, dedupeCampaigns } from "@/lib/dedupe";
 import { subDays, startOfMonth, endOfMonth, subMonths, format } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 
@@ -66,10 +67,13 @@ export async function GET(req: NextRequest) {
       tokens.map((token) => fetchAllCampaignData(token, datePreset, since, until))
     );
 
-    const campaigns = allResults.flatMap((r) => r.campaigns);
-    const accounts = allResults.flatMap((r) => r.accounts);
+    const campaigns = dedupeCampaigns(allResults.flatMap((r) => r.campaigns));
+    const accounts = dedupeAccounts(allResults.flatMap((r) => r.accounts));
+    const failures = allResults.flatMap((r, tokenIndex) =>
+      r.failures.map((failure) => ({ ...failure, tokenIndex: tokenIndex + 1 }))
+    );
 
-    return NextResponse.json({ campaigns, accounts });
+    return NextResponse.json({ campaigns, accounts, failures });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

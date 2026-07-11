@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchAllInsights } from "@/lib/meta";
+import { dedupeAccounts, dedupeInsights } from "@/lib/dedupe";
 import { subDays, startOfMonth, endOfMonth, subMonths, format } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 
@@ -122,11 +123,19 @@ export async function GET(req: NextRequest) {
       Promise.all(tokens.map((token) => fetchAllInsights(token, undefined, ranges.previous.since, ranges.previous.until))),
     ]);
 
-    const insights = currentResults.flatMap((r) => r.insights);
-    const previousInsights = prevResults.flatMap((r) => r.insights);
-    const accounts = currentResults.flatMap((r) => r.accounts);
+    const insights = dedupeInsights(currentResults.flatMap((r) => r.insights));
+    const previousInsights = dedupeInsights(prevResults.flatMap((r) => r.insights));
+    const accounts = dedupeAccounts(currentResults.flatMap((r) => r.accounts));
+    const failures = [
+      ...currentResults.flatMap((r, tokenIndex) =>
+        r.failures.map((failure) => ({ ...failure, tokenIndex: tokenIndex + 1, period: "current" }))
+      ),
+      ...prevResults.flatMap((r, tokenIndex) =>
+        r.failures.map((failure) => ({ ...failure, tokenIndex: tokenIndex + 1, period: "previous" }))
+      ),
+    ];
 
-    return NextResponse.json({ insights, previousInsights, accounts });
+    return NextResponse.json({ insights, previousInsights, accounts, failures });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -21,6 +21,14 @@ import {
 import DateRangePicker from "@/components/DateRangePicker";
 import type { CampaignRow } from "@/lib/meta";
 
+type FetchFailure = {
+  scope: string;
+  accountId?: string;
+  accountName?: string;
+  message: string;
+  tokenIndex?: number;
+};
+
 /* ── helpers ─────────────────────────────────── */
 
 function fmt(n: number) {
@@ -105,6 +113,7 @@ export default function AdsPage() {
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [fetchFailures, setFetchFailures] = useState<FetchFailure[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   // Date
@@ -174,9 +183,10 @@ export default function AdsPage() {
         try {
           const cached = sessionStorage.getItem(cacheKey);
           if (cached) {
-            const { data, ts } = JSON.parse(cached);
+            const { data, failures, ts } = JSON.parse(cached);
             if (Date.now() - ts < 15 * 60 * 1000) {
               setCampaigns(data || []);
+              setFetchFailures(failures || []);
               setLastUpdated(new Date(ts));
               return;
             }
@@ -186,6 +196,7 @@ export default function AdsPage() {
 
       setLoading(true);
       setError("");
+      setFetchFailures([]);
 
       try {
         let url: string;
@@ -199,10 +210,12 @@ export default function AdsPage() {
         if (data.error) throw new Error(data.error);
 
         const rows: CampaignRow[] = data.campaigns || [];
+        const failures: FetchFailure[] = data.failures || [];
         setCampaigns(rows);
+        setFetchFailures(failures);
         setLastUpdated(new Date());
         try {
-          sessionStorage.setItem(cacheKey, JSON.stringify({ data: rows, ts: Date.now() }));
+          sessionStorage.setItem(cacheKey, JSON.stringify({ data: rows, failures, ts: Date.now() }));
         } catch {}
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
@@ -420,6 +433,19 @@ export default function AdsPage() {
         {error && (
           <div className="bg-red-900/40 border border-red-700 rounded-lg px-4 py-3 text-red-300 text-sm">
             ❌ {error}
+          </div>
+        )}
+
+        {fetchFailures.length > 0 && (
+          <div className="bg-orange-900/25 border border-orange-700/60 rounded-lg px-4 py-3 text-orange-200 text-sm">
+            <p className="font-medium">⚠️ ดึงข้อมูลไม่ครบ {fetchFailures.length} รายการ</p>
+            <ul className="mt-1 space-y-0.5 text-xs text-orange-300/90">
+              {fetchFailures.map((failure, index) => (
+                <li key={`${failure.accountId || failure.scope}-${index}`}>
+                  {failure.accountName || failure.accountId || `Token #${failure.tokenIndex || "?"}`} — {failure.message}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 

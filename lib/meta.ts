@@ -28,6 +28,13 @@ export interface AdAccount {
   name: string;
 }
 
+export interface FetchFailure {
+  scope: "accounts" | "insights" | "campaigns";
+  accountId?: string;
+  accountName?: string;
+  message: string;
+}
+
 async function fetchAllAdAccounts(token: string): Promise<AdAccount[]> {
   const accounts: AdAccount[] = [];
   let url = `${META_API_BASE}/me/adaccounts?fields=id,name&limit=50&access_token=${token}`;
@@ -64,8 +71,7 @@ async function fetchInsightsForAccount(
   const result = await fetchGraphPages<Record<string, unknown>>(initialUrl);
 
   if (result.error) {
-    console.warn(`Error fetching ${accountId}: ${result.error.message}`);
-    return [];
+    throw new Error(result.error.message);
   }
 
   for (const row of result.data) {
@@ -113,8 +119,17 @@ export async function fetchAllInsights(
   datePreset: string = "last_30d",
   since?: string,
   until?: string
-): Promise<{ insights: AdInsight[]; accounts: AdAccount[] }> {
-  const accounts = await fetchAllAdAccounts(token);
+): Promise<{ insights: AdInsight[]; accounts: AdAccount[]; failures: FetchFailure[] }> {
+  let accounts: AdAccount[];
+  try {
+    accounts = await fetchAllAdAccounts(token);
+  } catch (error: unknown) {
+    return {
+      insights: [],
+      accounts: [],
+      failures: [{ scope: "accounts", message: error instanceof Error ? error.message : "Unknown account error" }],
+    };
+  }
 
   const results = await Promise.allSettled(
     accounts.map((acc) =>
@@ -123,13 +138,22 @@ export async function fetchAllInsights(
   );
 
   const insights: AdInsight[] = [];
-  for (const result of results) {
+  const failures: FetchFailure[] = [];
+  for (const [index, result] of results.entries()) {
     if (result.status === "fulfilled") {
       insights.push(...result.value);
+    } else {
+      const account = accounts[index];
+      failures.push({
+        scope: "insights",
+        accountId: account.id,
+        accountName: account.name,
+        message: result.reason instanceof Error ? result.reason.message : "Unknown insights error",
+      });
     }
   }
 
-  return { insights, accounts };
+  return { insights, accounts, failures };
 }
 
 /* ──────────────────────────────────────────────
@@ -190,8 +214,7 @@ async function fetchCampaignInsights(
     const res: Response = await fetch(currentUrl);
     const data = await res.json();
     if (data.error) {
-      console.warn(`Campaign insights error ${accountId}: ${data.error.message}`);
-      return [];
+      throw new Error(data.error.message);
     }
     rows.push(...(data.data || []));
     nextUrl = data.paging?.next || null;
@@ -213,8 +236,7 @@ async function fetchCampaignBudgets(
     const res: Response = await fetch(currentUrl);
     const data = await res.json();
     if (data.error) {
-      console.warn(`Campaign budgets error ${accountId}: ${data.error.message}`);
-      return [];
+      throw new Error(data.error.message);
     }
     rows.push(...(data.data || []));
     nextUrl = data.paging?.next || null;
@@ -227,8 +249,17 @@ export async function fetchAllCampaignData(
   datePreset: string = "last_30d",
   since?: string,
   until?: string
-): Promise<{ campaigns: CampaignRow[]; accounts: AdAccount[] }> {
-  const accounts = await fetchAllAdAccounts(token);
+): Promise<{ campaigns: CampaignRow[]; accounts: AdAccount[]; failures: FetchFailure[] }> {
+  let accounts: AdAccount[];
+  try {
+    accounts = await fetchAllAdAccounts(token);
+  } catch (error: unknown) {
+    return {
+      campaigns: [],
+      accounts: [],
+      failures: [{ scope: "accounts", message: error instanceof Error ? error.message : "Unknown account error" }],
+    };
+  }
 
   const results = await Promise.allSettled(
     accounts.map(async (acc) => {
@@ -276,11 +307,20 @@ export async function fetchAllCampaignData(
   );
 
   const campaigns: CampaignRow[] = [];
-  for (const result of results) {
+  const failures: FetchFailure[] = [];
+  for (const [index, result] of results.entries()) {
     if (result.status === "fulfilled") {
       campaigns.push(...result.value);
+    } else {
+      const account = accounts[index];
+      failures.push({
+        scope: "campaigns",
+        accountId: account.id,
+        accountName: account.name,
+        message: result.reason instanceof Error ? result.reason.message : "Unknown campaign error",
+      });
     }
   }
 
-  return { campaigns, accounts };
+  return { campaigns, accounts, failures };
 }

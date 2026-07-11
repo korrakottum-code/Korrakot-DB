@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 
@@ -16,18 +16,6 @@ interface BranchConfig {
   branches: Record<string, BranchEntry>;
 }
 
-function isWritable(): boolean {
-  try {
-    // Try to write a temp file to check if filesystem is writable
-    const testPath = path.join(path.dirname(CONFIG_PATH), ".write-test");
-    fs.writeFileSync(testPath, "test", "utf-8");
-    fs.unlinkSync(testPath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function readConfig(): BranchConfig {
   try {
     const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
@@ -37,79 +25,25 @@ function readConfig(): BranchConfig {
   }
 }
 
-function writeConfig(config: BranchConfig): void {
-  const dir = path.dirname(CONFIG_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
-}
-
-// GET /api/branches — return all branches + writable status
+// GET /api/branches — return all branches. Branches are intentionally read-only
+// in the deployed app; updates must go through a reviewed Pull Request.
 export async function GET() {
   const config = readConfig();
-  const writable = isWritable();
-  return NextResponse.json({ ...config, writable });
+  return NextResponse.json({ ...config, writable: false });
 }
 
-// POST /api/branches — add or update a branch
-// Body: { code: string, name: string, isTest?: boolean }
-export async function POST(req: NextRequest) {
-  if (!isWritable()) {
-    return NextResponse.json(
-      { error: "ระบบ production ไม่รองรับการแก้ไข — กรุณาแก้ไฟล์ data/branch-config.json ใน repo แล้ว deploy ใหม่" },
-      { status: 403 }
-    );
-  }
-
-  try {
-    const body = await req.json();
-    const { code, name, isTest } = body as { code?: string; name?: string; isTest?: boolean };
-
-    if (!code || !name) {
-      return NextResponse.json({ error: "ต้องระบุ code และ name" }, { status: 400 });
-    }
-
-    const upperCode = code.toUpperCase().trim();
-    if (!upperCode) {
-      return NextResponse.json({ error: "code ไม่ถูกต้อง" }, { status: 400 });
-    }
-
-    const config = readConfig();
-    config.branches[upperCode] = {
-      name: name.trim(),
-      isTest: isTest ?? config.branches[upperCode]?.isTest ?? false,
-    };
-    writeConfig(config);
-
-    return NextResponse.json({ success: true, branches: config.branches });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+// POST /api/branches — disabled in read-only mode.
+export async function POST() {
+  return NextResponse.json(
+    { error: "ระบบนี้เป็น Read only — กรุณาแก้ data/branch-config.json ผ่าน Pull Request" },
+    { status: 405 }
+  );
 }
 
-// DELETE /api/branches?code=XXX — delete a branch
-export async function DELETE(req: NextRequest) {
-  if (!isWritable()) {
-    return NextResponse.json(
-      { error: "ระบบ production ไม่รองรับการลบ — กรุณาแก้ไฟล์ data/branch-config.json ใน repo แล้ว deploy ใหม่" },
-      { status: 403 }
-    );
-  }
-
-  const { searchParams } = new URL(req.url);
-  const code = searchParams.get("code")?.toUpperCase().trim();
-
-  if (!code) {
-    return NextResponse.json({ error: "ต้องระบุ code" }, { status: 400 });
-  }
-
-  const config = readConfig();
-  if (!config.branches[code]) {
-    return NextResponse.json({ error: `ไม่พบสาขา ${code}` }, { status: 404 });
-  }
-
-  delete config.branches[code];
-  writeConfig(config);
-
-  return NextResponse.json({ success: true, branches: config.branches });
+// DELETE /api/branches?code=XXX — disabled in read-only mode.
+export async function DELETE() {
+  return NextResponse.json(
+    { error: "ระบบนี้เป็น Read only — กรุณาแก้ data/branch-config.json ผ่าน Pull Request" },
+    { status: 405 }
+  );
 }

@@ -15,6 +15,7 @@ import {
   objectiveMetric,
   sumReportingRows,
 } from "@/lib/reporting";
+import { createSnapshotId } from "@/lib/report-export";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
@@ -212,6 +213,13 @@ export async function GET(req: NextRequest) {
       asOf: periods.asOf,
       timezone: periods.timezone,
       generatedAt: new Date().toISOString(),
+      snapshotId: createSnapshotId({
+        since: periods.current.since,
+        until: periods.current.until,
+        comparisonSince: periods.comparison.since,
+        comparisonUntil: periods.comparison.until,
+        fetchedAt: cached.fetchedAt,
+      }),
       periods,
       totals,
       previousTotals,

@@ -24,3 +24,31 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@media print {
+  body {
+    background: #fff !important;
+  }
+
+  .management-report {
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  .management-report [data-export-control],
+  .management-report header a,
+  .management-report header button {
+    display: none !important;
+  }
+
+  .management-report .print-snapshot {
+    display: block !important;
+  }
+
+  .management-report * {
+    color: #111 !important;
+    border-color: #d1d5db !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+}

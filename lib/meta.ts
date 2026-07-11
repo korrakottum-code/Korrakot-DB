@@ -24,6 +24,7 @@ export interface AdInsight {
   adId: string;
   campaignId?: string;
   objective?: string;
+  optimizationGoal?: string;
   status?: string;
   effectiveStatus?: string;
   budget?: number;
@@ -181,6 +182,7 @@ export interface CampaignRow {
   objective: string;
   status: string;
   effectiveStatus: string;
+  optimizationGoal?: string;
   inbox: number;
   cpi: number;
 }
@@ -203,6 +205,7 @@ interface CampaignBudgetRaw {
   objective?: string;
   status?: string;
   effective_status?: string;
+  optimization_goal?: string;
 }
 
 async function fetchCampaignInsights(
@@ -241,7 +244,7 @@ async function fetchCampaignBudgets(
   accountId: string,
   token: string
 ): Promise<CampaignBudgetRaw[]> {
-  const fields = "id,name,daily_budget,lifetime_budget,budget_remaining,objective,status,effective_status";
+  const fields = "id,name,daily_budget,lifetime_budget,budget_remaining,objective,optimization_goal,status,effective_status";
   let nextUrl: string | null =
     `${META_API_BASE}/${accountId}/campaigns?fields=${fields}&limit=500&access_token=${token}`;
 
@@ -287,6 +290,7 @@ export async function fetchAllCampaignMetadata(
         budgetType: budget.daily_budget ? "daily" : budget.lifetime_budget ? "lifetime" : "-",
         budgetRemaining: budget.budget_remaining ? parseFloat(budget.budget_remaining) / 100 : null,
         objective: budget.objective || "",
+        optimizationGoal: budget.optimization_goal || "",
         status: budget.status || "",
         effectiveStatus: budget.effective_status || "",
         inbox: 0,
@@ -338,16 +342,16 @@ export async function fetchAllCampaignData(
       ]);
 
       // Build budget lookup by campaign ID
-      const budgetMap: Record<string, { budget: number; budgetType: string; budgetRemaining: number | null; objective: string; status: string; effectiveStatus: string }> = {};
+      const budgetMap: Record<string, { budget: number; budgetType: string; budgetRemaining: number | null; objective: string; optimizationGoal: string; status: string; effectiveStatus: string }> = {};
       for (const b of budgetsRaw) {
         const daily = parseFloat(b.daily_budget || "0") / 100;   // Meta returns in cents
         const lifetime = parseFloat(b.lifetime_budget || "0") / 100;
         if (daily > 0) {
-          budgetMap[b.id] = { budget: daily, budgetType: "daily", budgetRemaining: b.budget_remaining ? parseFloat(b.budget_remaining) / 100 : null, objective: b.objective || "", status: b.status || "", effectiveStatus: b.effective_status || "" };
+          budgetMap[b.id] = { budget: daily, budgetType: "daily", budgetRemaining: b.budget_remaining ? parseFloat(b.budget_remaining) / 100 : null, objective: b.objective || "", optimizationGoal: b.optimization_goal || "", status: b.status || "", effectiveStatus: b.effective_status || "" };
         } else if (lifetime > 0) {
-          budgetMap[b.id] = { budget: lifetime, budgetType: "lifetime", budgetRemaining: b.budget_remaining ? parseFloat(b.budget_remaining) / 100 : null, objective: b.objective || "", status: b.status || "", effectiveStatus: b.effective_status || "" };
+          budgetMap[b.id] = { budget: lifetime, budgetType: "lifetime", budgetRemaining: b.budget_remaining ? parseFloat(b.budget_remaining) / 100 : null, objective: b.objective || "", optimizationGoal: b.optimization_goal || "", status: b.status || "", effectiveStatus: b.effective_status || "" };
         } else {
-          budgetMap[b.id] = { budget: 0, budgetType: "-", budgetRemaining: b.budget_remaining ? parseFloat(b.budget_remaining) / 100 : null, objective: b.objective || "", status: b.status || "", effectiveStatus: b.effective_status || "" };
+          budgetMap[b.id] = { budget: 0, budgetType: "-", budgetRemaining: b.budget_remaining ? parseFloat(b.budget_remaining) / 100 : null, objective: b.objective || "", optimizationGoal: b.optimization_goal || "", status: b.status || "", effectiveStatus: b.effective_status || "" };
         }
       }
 
@@ -358,7 +362,7 @@ export async function fetchAllCampaignData(
             (a) => a.action_type === "onsite_conversion.messaging_conversation_started_7d"
           )?.value || "0"
         );
-        const budgetInfo = budgetMap[row.campaign_id] || { budget: 0, budgetType: "-", budgetRemaining: null, objective: "", status: "", effectiveStatus: "" };
+        const budgetInfo = budgetMap[row.campaign_id] || { budget: 0, budgetType: "-", budgetRemaining: null, objective: "", optimizationGoal: "", status: "", effectiveStatus: "" };
 
         return {
           accountId: acc.id,
@@ -370,6 +374,7 @@ export async function fetchAllCampaignData(
           budgetType: budgetInfo.budgetType,
           budgetRemaining: budgetInfo.budgetRemaining,
           objective: budgetInfo.objective,
+          optimizationGoal: budgetInfo.optimizationGoal,
           status: budgetInfo.status,
           effectiveStatus: budgetInfo.effectiveStatus,
           inbox,

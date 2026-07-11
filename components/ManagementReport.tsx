@@ -54,7 +54,7 @@ type ReportResponse = {
   periods: ReportingPeriods;
   dailySeries: DailyReportingRow[];
   previousDailySeries: DailyReportingRow[];
-  objectiveBreakdown: Array<{ objective: string; metric: ObjectiveMetric; totals: ReportingTotals; confidence: { level: "Low" | "Medium" | "High"; sample: number; reason: string } }>;
+  objectiveBreakdown: Array<{ objective: string; optimizationGoal?: string; metric: ObjectiveMetric; totals: ReportingTotals; confidence: { level: "Low" | "Medium" | "High"; sample: number; reason: string } }>;
   classification: { counts: Record<string, number>; knownBranchCodes: number };
   statusBreakdown: Array<{ objective: string; status: string; effectiveStatus: string; campaigns: number; spend: number; budget: number }>;
   pacing: { daily: PacingResult; lifetime: PacingResult; note: string };
@@ -100,6 +100,12 @@ function pctChange(current: number, previous: number): number | null {
 
 function normalizeObjective(value: string | undefined) {
   return (value || "UNKNOWN").toUpperCase();
+}
+
+function objectiveFilterKey(row: Pick<AdInsight, "objective" | "optimizationGoal">) {
+  const objective = normalizeObjective(row.objective);
+  const goal = normalizeObjective(row.optimizationGoal);
+  return goal === "UNKNOWN" ? objective : `${objective} · ${goal}`;
 }
 
 function objectiveLabel(value: string) {
@@ -196,12 +202,12 @@ export default function ManagementReport() {
   }, [period]);
 
   const filteredInsights = useMemo(
-    () => report?.insights.filter((row) => objectiveFilter === "ALL" || normalizeObjective(row.objective) === objectiveFilter) || [],
+    () => report?.insights.filter((row) => objectiveFilter === "ALL" || objectiveFilterKey(row) === objectiveFilter) || [],
     [report?.insights, objectiveFilter]
   );
 
   const objectiveOptions = useMemo(
-    () => ["ALL", ...Array.from(new Set(report?.insights.map((row) => normalizeObjective(row.objective)) || []))],
+    () => ["ALL", ...Array.from(new Set(report?.insights.map((row) => objectiveFilterKey(row)) || []))],
     [report?.insights]
   );
 
@@ -214,8 +220,8 @@ export default function ManagementReport() {
       const current = map.get(name) || { rows: [], objectiveKnown: true, objectives: new Set<string>(), metricKeys: new Set<string>() };
       current.rows.push(row);
       current.objectiveKnown = current.objectiveKnown && Boolean(row.objective);
-      current.objectives.add(normalizeObjective(row.objective));
-      current.metricKeys.add(objectiveMetric(row.objective).key);
+      current.objectives.add(objectiveFilterKey(row));
+      current.metricKeys.add(objectiveMetric(row.objective, row.optimizationGoal).key);
       map.set(name, current);
     }
     const totalSpend = [...map.values()].reduce((sum, group) => sum + group.rows.reduce((s, row) => s + row.spend, 0), 0);
@@ -288,7 +294,7 @@ export default function ManagementReport() {
         asOf: report.asOf,
         generatedAt: report.generatedAt,
         coverage: `${report.coverage.accountsComplete}/${report.coverage.accountsTotal} accounts, ${report.coverage.failureCount} failures`,
-        confidence: report.objectiveBreakdown.map((item) => `${item.objective}:${item.confidence.level}`).join(" | ") || "ยังไม่มีข้อมูล",
+        confidence: report.objectiveBreakdown.map((item) => `${item.objective}${item.optimizationGoal ? `/${item.optimizationGoal}` : ""}:${item.confidence.level}`).join(" | ") || "ยังไม่มีข้อมูล",
       },
       branchSummaries,
       exportDailySeries

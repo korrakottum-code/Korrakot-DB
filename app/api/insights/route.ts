@@ -103,6 +103,7 @@ export async function GET(req: NextRequest) {
           ? {
               ...row,
               objective: campaign.objective || undefined,
+              optimizationGoal: campaign.optimizationGoal || undefined,
               status: campaign.status || undefined,
               effectiveStatus: campaign.effectiveStatus || undefined,
               budget: campaign.budget,
@@ -143,15 +144,18 @@ export async function GET(req: NextRequest) {
     const objectiveGroups = new Map<string, typeof rows>();
     for (const row of rows) {
       const objective = row.objective || "UNKNOWN";
-      const group = objectiveGroups.get(objective) || [];
+      const optimizationGoal = row.optimizationGoal || "UNKNOWN";
+      const groupKey = `${objective}|${optimizationGoal}`;
+      const group = objectiveGroups.get(groupKey) || [];
       group.push(row);
-      objectiveGroups.set(objective, group);
+      objectiveGroups.set(groupKey, group);
     }
-    const objectiveBreakdown = [...objectiveGroups.entries()].map(([objective, group]) => {
-      const metric = objectiveMetric(objective);
+    const objectiveBreakdown = [...objectiveGroups.entries()].map(([groupKey, group]) => {
+      const [objective, optimizationGoal] = groupKey.split("|");
+      const metric = objectiveMetric(objective, optimizationGoal);
       const groupTotals = sumReportingRows(group);
       const sample = metric.key === "unknown" ? 0 : groupTotals[metric.key];
-      return { objective, metric, totals: groupTotals, confidence: confidenceForSample(sample, metric.key === "impressions" ? groupTotals.impressions : sample, groupTotals.spend > 0) };
+      return { objective, optimizationGoal: optimizationGoal === "UNKNOWN" ? undefined : optimizationGoal, metric, totals: groupTotals, confidence: confidenceForSample(sample, metric.key === "impressions" ? groupTotals.impressions : sample, groupTotals.spend > 0) };
     });
     const failureAccountIds = new Set(cached.value.failures.filter((failure) => failure.accountId).map((failure) => failure.accountId));
     const dailyBudget = cached.value.campaigns

@@ -249,7 +249,20 @@ export function aggregateDaily(rows: AdInsight[]): DailyReportingRow[] {
     .map(([date, dateRows]) => ({ date, ...sumReportingRows(dateRows) }));
 }
 
-export function objectiveMetric(objective: string | undefined): ObjectiveMetric {
+export function objectiveMetric(objective: string | undefined, optimizationGoal?: string): ObjectiveMetric {
+  const goal = (optimizationGoal || "").toLowerCase();
+  if (goal.includes("lead")) {
+    return { key: "leads", label: "Lead", costLabel: "CPL", reason: "Optimization goal เน้น Lead จึงใช้ Lead/CPL เป็นหลัก" };
+  }
+  if (goal.includes("conversation") || goal.includes("messag")) {
+    return { key: "inbox", label: "Inbox", costLabel: "CPI", reason: "Optimization goal เน้นบทสนทนา จึงใช้ Inbox/CPI เป็นหลัก" };
+  }
+  if (goal.includes("click")) {
+    return { key: "clicks", label: "Click", costLabel: "CPC", reason: "Optimization goal เน้น Click จึงใช้ Click/CPC เป็นหลัก" };
+  }
+  if (goal.includes("impression") || goal.includes("reach") || goal.includes("view")) {
+    return { key: "impressions", label: "Impression", costLabel: "CPM", reason: "Optimization goal เน้นการเข้าถึง/การดู จึงใช้ Impression/CPM เป็นหลัก" };
+  }
   const normalized = (objective || "").toLowerCase();
   if (normalized.includes("lead")) {
     return { key: "leads", label: "Lead", costLabel: "CPL", reason: "Objective เน้น Lead จึงใช้ Lead/CPL เป็นหลัก" };

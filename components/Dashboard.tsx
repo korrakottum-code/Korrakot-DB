@@ -81,6 +81,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [fetchFailures, setFetchFailures] = useState<FetchFailure[]>([]);
+  const [serverCacheHit, setServerCacheHit] = useState(false);
   const [datePreset, setDatePreset] = useState("today");
   const [tab, setTab] = useState<TabKey>("branch");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -178,12 +179,13 @@ export default function Dashboard() {
       try {
         const cached = sessionStorage.getItem(cacheKey);
         if (cached) {
-          const { data, prevData, failures, ts } = JSON.parse(cached);
+          const { data, prevData, failures, fetchedAt, ts } = JSON.parse(cached);
           if (Date.now() - ts < 15 * 60 * 1000) {
             setInsights(data || []);
             setPrevInsights(prevData || []);
             setFetchFailures(failures || []);
-            setLastUpdated(new Date(ts));
+            setServerCacheHit(true);
+            setLastUpdated(new Date(fetchedAt || ts));
             return;
           }
         }
@@ -192,6 +194,7 @@ export default function Dashboard() {
     setLoading(true);
     setError("");
     setFetchFailures([]);
+    setServerCacheHit(false);
     try {
       let url: string;
       if (datePreset === "custom") {
@@ -199,18 +202,21 @@ export default function Dashboard() {
       } else {
         url = `/api/insights?date_preset=${datePreset}`;
       }
+      if (force) url += `${url.includes("?") ? "&" : "?"}refresh=1`;
       const res = await fetch(url);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       const current = data.insights || [];
       const prev = data.previousInsights || [];
       const failures: FetchFailure[] = data.failures || [];
+      const fetchedAt = data.cache?.fetchedAt || new Date().toISOString();
       setInsights(current);
       setPrevInsights(prev);
       setFetchFailures(failures);
-      setLastUpdated(new Date());
+      setServerCacheHit(Boolean(data.cache?.hit));
+      setLastUpdated(new Date(fetchedAt));
       try {
-        sessionStorage.setItem(cacheKey, JSON.stringify({ data: current, prevData: prev, failures, ts: Date.now() }));
+        sessionStorage.setItem(cacheKey, JSON.stringify({ data: current, prevData: prev, failures, fetchedAt, ts: Date.now() }));
       } catch {}
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
@@ -367,7 +373,8 @@ export default function Dashboard() {
             <h1 className="text-xl font-bold text-white">Meta Ads Dashboard</h1>
             {lastUpdated && (
               <p className="text-xs text-gray-400 mt-0.5">
-                อัปเดตล่าสุด: {lastUpdated.toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok" })}
+                อัปเดตข้อมูล: {lastUpdated.toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok" })}
+                {serverCacheHit && <span className="text-slate-500"> (จาก cache)</span>}
               </p>
             )}
           </div>

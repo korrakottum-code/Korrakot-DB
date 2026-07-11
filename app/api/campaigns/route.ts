@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchAllCampaignData } from "@/lib/meta";
 import { dedupeAccounts, dedupeCampaigns } from "@/lib/dedupe";
+import { getServerCache } from "@/lib/server-cache";
 import { subDays, startOfMonth, endOfMonth, subMonths, format } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 
 const TZ = "Asia/Bangkok";
+const CACHE_TTL_MS = 10 * 60 * 1000;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,6 +51,7 @@ export async function GET(req: NextRequest) {
   const datePreset = searchParams.get("date_preset") || "last_30d";
   const customSince = searchParams.get("since");
   const customUntil = searchParams.get("until");
+  const forceRefresh = searchParams.get("refresh") === "1";
 
   try {
     let since: string | undefined;
@@ -63,17 +66,25 @@ export async function GET(req: NextRequest) {
       until = range.until;
     }
 
-    const allResults = await Promise.all(
-      tokens.map((token) => fetchAllCampaignData(token, datePreset, since, until))
-    );
+    const cacheKey = ["campaigns", since, until].join(":");
+    const cached = await getServerCache(cacheKey, CACHE_TTL_MS, async () => {
+      const allResults = await Promise.all(
+        tokens.map((token) => fetchAllCampaignData(token, datePreset, since, until))
+      );
 
-    const campaigns = dedupeCampaigns(allResults.flatMap((r) => r.campaigns));
-    const accounts = dedupeAccounts(allResults.flatMap((r) => r.accounts));
-    const failures = allResults.flatMap((r, tokenIndex) =>
-      r.failures.map((failure) => ({ ...failure, tokenIndex: tokenIndex + 1 }))
-    );
+      const campaigns = dedupeCampaigns(allResults.flatMap((r) => r.campaigns));
+      const accounts = dedupeAccounts(allResults.flatMap((r) => r.accounts));
+      const failures = allResults.flatMap((r, tokenIndex) =>
+        r.failures.map((failure) => ({ ...failure, tokenIndex: tokenIndex + 1 }))
+      );
 
-    return NextResponse.json({ campaigns, accounts, failures });
+      return { campaigns, accounts, failures };
+    }, forceRefresh);
+
+    return NextResponse.json({
+      ...cached.value,
+      cache: { hit: cached.hit, fetchedAt: cached.fetchedAt },
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -31,7 +31,8 @@ export default function BranchSettings() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [search, setSearch] = useState("");
-  const [readOnly, setReadOnly] = useState(false);
+  // Branch configuration is managed through reviewed Pull Requests.
+  const readOnly = true;
 
   // New branch form
   const [newCode, setNewCode] = useState("");
@@ -49,7 +50,6 @@ export default function BranchSettings() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setBranches(data.branches || {});
-      setReadOnly(data.writable === false);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "โหลดข้อมูลไม่สำเร็จ");
     } finally {
@@ -129,12 +129,6 @@ export default function BranchSettings() {
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleToggleTest = async (code: string) => {
-    const entry = branches[code];
-    if (!entry) return;
-    await handleUpdate(code, entry.name, !entry.isTest);
   };
 
   const startEdit = (code: string) => {
@@ -237,17 +231,15 @@ export default function BranchSettings() {
         )}
 
         {/* Read-only banner */}
-        {readOnly && (
-          <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-4 flex items-start gap-3">
+        <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-4 flex items-start gap-3">
             <Lock className="w-5 h-5 text-slate-400 mt-0.5 flex-shrink-0" />
             <div>
-              <p className="text-sm font-medium text-slate-200">โหมดอ่านอย่างเดียว (Production)</p>
+              <p className="text-sm font-medium text-slate-200">โหมดอ่านอย่างเดียว</p>
               <p className="text-xs text-slate-400 mt-1">
-                ระบบ production ไม่รองรับการแก้ไขผ่าน UI — กรุณาแก้ไฟล์ <code className="bg-slate-700 px-1.5 py-0.5 rounded text-slate-300">data/branch-config.json</code> ใน repo แล้ว deploy ใหม่
+                การแก้ไขสาขาต้องทำผ่าน Pull Request โดยแก้ไฟล์ <code className="bg-slate-700 px-1.5 py-0.5 rounded text-slate-300">data/branch-config.json</code> แล้ว deploy ใหม่
               </p>
             </div>
-          </div>
-        )}
+        </div>
 
         {/* Search + Add button */}
         <div className="flex items-center gap-3">
@@ -260,20 +252,19 @@ export default function BranchSettings() {
               className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-indigo-500 transition-colors"
             />
           </div>
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            disabled={readOnly}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-              readOnly ? "bg-gray-800 text-gray-500 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-500"
-            }`}
-          >
-            <Plus className="w-4 h-4" />
-            เพิ่มสาขา
-          </button>
+          {!readOnly && (
+            <button
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap bg-indigo-600 hover:bg-indigo-500"
+            >
+              <Plus className="w-4 h-4" />
+              เพิ่มสาขา
+            </button>
+          )}
         </div>
 
         {/* Add form */}
-        {showAddForm && (
+        {!readOnly && showAddForm && (
           <div className="bg-indigo-950/30 border border-indigo-800/50 rounded-xl p-4 space-y-3 animate-fade-in">
             <p className="text-sm font-medium text-indigo-300">เพิ่มสาขาใหม่</p>
             <div className="flex flex-col sm:flex-row gap-3">
@@ -340,7 +331,7 @@ export default function BranchSettings() {
                         <span className="font-mono text-indigo-300 font-semibold text-sm">{code}</span>
                       </td>
                       <td className="py-3 px-4">
-                        {editingCode === code ? (
+                        {editingCode === code && !readOnly ? (
                           <div className="flex items-center gap-2">
                             <input
                               value={editName}
@@ -371,13 +362,11 @@ export default function BranchSettings() {
                         )}
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <button
-                          onClick={() => handleToggleTest(code)}
-                          disabled={saving || readOnly}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${
                             entry.isTest
-                              ? "bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25"
-                              : "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25"
+                              ? "bg-amber-500/15 text-amber-300 border border-amber-500/30"
+                              : "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
                           }`}
                         >
                           {entry.isTest ? (
@@ -391,7 +380,7 @@ export default function BranchSettings() {
                               Active
                             </>
                           )}
-                        </button>
+                        </span>
                       </td>
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1">
@@ -435,9 +424,9 @@ export default function BranchSettings() {
         <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 text-xs text-slate-400 space-y-2">
           <p className="font-medium text-slate-300">💡 คำแนะนำ</p>
           <ul className="list-disc list-inside space-y-1">
-            <li>สาขาที่ถูก mark เป็น <span className="text-amber-300 font-medium">"เทส"</span> จะถูกซ่อนจาก Dashboard โดย default</li>
-            <li>รหัสย่อจะถูกแปลงเป็นตัวพิมพ์ใหญ่อัตโนมัติ</li>
-            <li>เมื่อระบบจับ branch code ใหม่ได้ จะแสดงเป็น warning บน Dashboard — คลิก "เพิ่มสาขา" เพื่อเข้าหน้านี้</li>
+            <li>สาขาที่ถูก mark เป็น <span className="text-amber-300 font-medium">&quot;เทส&quot;</span> จะถูกซ่อนจาก Dashboard โดย default</li>
+            <li>รหัสย่อและชื่อสาขาจะแก้ไขผ่าน Pull Request เท่านั้น</li>
+            <li>เมื่อระบบจับ branch code ใหม่ได้ จะแสดงเป็น warning บน Dashboard — จากนั้นแก้ไฟล์ config แล้ว deploy ใหม่</li>
           </ul>
         </div>
       </div>

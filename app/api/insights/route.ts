@@ -96,6 +96,12 @@ export async function GET(req: NextRequest) {
         ...campaign,
         spent: spendByCampaign.get(`${campaign.accountId}|${campaign.campaignId}`) || 0,
       }));
+      const adSetGoals = new Map<string, string>();
+      for (const result of campaignResults) {
+        for (const [adSetId, goal] of Object.entries(result.adSetGoals)) {
+          adSetGoals.set(adSetId, goal);
+        }
+      }
       const campaignMap = new Map(campaigns.map((campaign) => [`${campaign.accountId}|${campaign.campaignId}`, campaign]));
       const enrich = (rows: typeof currentResults[number]["insights"]) => rows.map((row) => {
         const campaign = campaignMap.get(`${row.accountId}|${row.campaignId || ""}`);
@@ -103,6 +109,7 @@ export async function GET(req: NextRequest) {
           ? {
               ...row,
               objective: campaign.objective || undefined,
+              optimizationGoal: campaign.optimizationGoal || (row.adSetId ? adSetGoals.get(row.adSetId) : undefined),
               status: campaign.status || undefined,
               effectiveStatus: campaign.effectiveStatus || undefined,
               budget: campaign.budget,
@@ -143,15 +150,18 @@ export async function GET(req: NextRequest) {
     const objectiveGroups = new Map<string, typeof rows>();
     for (const row of rows) {
       const objective = row.objective || "UNKNOWN";
-      const group = objectiveGroups.get(objective) || [];
+      const optimizationGoal = row.optimizationGoal || "UNKNOWN";
+      const groupKey = `${objective}|${optimizationGoal}`;
+      const group = objectiveGroups.get(groupKey) || [];
       group.push(row);
-      objectiveGroups.set(objective, group);
+      objectiveGroups.set(groupKey, group);
     }
-    const objectiveBreakdown = [...objectiveGroups.entries()].map(([objective, group]) => {
-      const metric = objectiveMetric(objective);
+    const objectiveBreakdown = [...objectiveGroups.entries()].map(([groupKey, group]) => {
+      const [objective, optimizationGoal] = groupKey.split("|");
+      const metric = objectiveMetric(objective, optimizationGoal);
       const groupTotals = sumReportingRows(group);
       const sample = metric.key === "unknown" ? 0 : groupTotals[metric.key];
-      return { objective, metric, totals: groupTotals, confidence: confidenceForSample(sample, metric.key === "impressions" ? groupTotals.impressions : sample, groupTotals.spend > 0) };
+      return { objective, optimizationGoal: optimizationGoal === "UNKNOWN" ? undefined : optimizationGoal, metric, totals: groupTotals, confidence: confidenceForSample(sample, metric.key === "impressions" ? groupTotals.impressions : sample, groupTotals.spend > 0) };
     });
     const failureAccountIds = new Set(cached.value.failures.filter((failure) => failure.accountId).map((failure) => failure.accountId));
     const dailyBudget = cached.value.campaigns

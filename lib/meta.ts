@@ -23,7 +23,9 @@ export interface AdInsight {
   accountName: string;
   adId: string;
   campaignId?: string;
+  adSetId?: string;
   objective?: string;
+  optimizationGoal?: string;
   status?: string;
   effectiveStatus?: string;
   budget?: number;
@@ -73,7 +75,7 @@ async function fetchInsightsForAccount(
     timeRange = `&date_preset=${datePreset}`;
   }
 
-  const fields = "ad_id,ad_name,campaign_id,spend,impressions,clicks,reach,ctr,cpc,cpm,actions,cost_per_action_type";
+  const fields = "ad_id,ad_name,campaign_id,adset_id,spend,impressions,clicks,reach,ctr,cpc,cpm,actions,cost_per_action_type";
   const insights: AdInsight[] = [];
   const initialUrl = `${META_API_BASE}/${accountId}/insights?fields=${fields}&level=ad&time_increment=1${timeRange}&limit=500&access_token=${token}`;
   const result = await fetchGraphPages<Record<string, unknown>>(initialUrl);
@@ -117,6 +119,7 @@ async function fetchInsightsForAccount(
       accountName,
       adId: String(row.ad_id || ""),
       campaignId: String(row.campaign_id || ""),
+      adSetId: String(row.adset_id || ""),
     });
   }
 
@@ -181,6 +184,7 @@ export interface CampaignRow {
   objective: string;
   status: string;
   effectiveStatus: string;
+  optimizationGoal?: string;
   inbox: number;
   cpi: number;
 }
@@ -203,6 +207,29 @@ interface CampaignBudgetRaw {
   objective?: string;
   status?: string;
   effective_status?: string;
+  optimization_goal?: string;
+}
+
+interface AdSetOptimizationRaw {
+  id: string;
+  campaign_id?: string;
+  optimization_goal?: string;
+}
+
+async function fetchAdSetOptimizationGoals(accountId: string, token: string): Promise<Record<string, string>> {
+  const fields = "id,campaign_id,optimization_goal";
+  let nextUrl: string | null = `${META_API_BASE}/${accountId}/adsets?fields=${fields}&limit=500&access_token=${token}`;
+  const goals: Record<string, string> = {};
+  while (nextUrl) {
+    const res = await fetch(nextUrl);
+    const data = await res.json() as { error?: { message: string }; data?: AdSetOptimizationRaw[]; paging?: { next?: string } };
+    if (data.error) throw new Error(data.error.message);
+    for (const row of data.data || []) {
+      if (row.id && row.optimization_goal) goals[row.id] = row.optimization_goal;
+    }
+    nextUrl = data.paging?.next || null;
+  }
+  return goals;
 }
 
 async function fetchCampaignInsights(
@@ -262,13 +289,14 @@ async function fetchCampaignBudgets(
 /** Fetch campaign metadata without fetching a second insights time series. */
 export async function fetchAllCampaignMetadata(
   token: string
-): Promise<{ campaigns: CampaignRow[]; accounts: AdAccount[]; failures: FetchFailure[] }> {
+): Promise<{ campaigns: CampaignRow[]; adSetGoals: Record<string, string>; accounts: AdAccount[]; failures: FetchFailure[] }> {
   let accounts: AdAccount[];
   try {
     accounts = await fetchAllAdAccounts(token);
   } catch (error: unknown) {
     return {
       campaigns: [],
+      adSetGoals: {},
       accounts: [],
       failures: [{ scope: "accounts", message: error instanceof Error ? error.message : "Unknown account error" }],
     };
@@ -276,8 +304,8 @@ export async function fetchAllCampaignMetadata(
 
   const results = await Promise.allSettled(
     accounts.map(async (acc) => {
-      const budgets = await fetchCampaignBudgets(acc.id, token);
-      return budgets.map((budget): CampaignRow => ({
+      const [budgets, adSetGoals] = await Promise.all([fetchCampaignBudgets(acc.id, token), fetchAdSetOptimizationGoals(acc.id, token)]);
+      const campaigns = budgets.map((budget): CampaignRow => ({
         accountId: acc.id,
         accountName: acc.name,
         campaignId: budget.id,
@@ -287,19 +315,23 @@ export async function fetchAllCampaignMetadata(
         budgetType: budget.daily_budget ? "daily" : budget.lifetime_budget ? "lifetime" : "-",
         budgetRemaining: budget.budget_remaining ? parseFloat(budget.budget_remaining) / 100 : null,
         objective: budget.objective || "",
+        optimizationGoal: budget.optimization_goal || "",
         status: budget.status || "",
         effectiveStatus: budget.effective_status || "",
         inbox: 0,
         cpi: 0,
       }));
+      return { campaigns, adSetGoals };
     })
   );
 
   const campaigns: CampaignRow[] = [];
+  const adSetGoals: Record<string, string> = {};
   const failures: FetchFailure[] = [];
   for (const [index, result] of results.entries()) {
     if (result.status === "fulfilled") {
-      campaigns.push(...result.value);
+      campaigns.push(...result.value.campaigns);
+      Object.assign(adSetGoals, result.value.adSetGoals);
     } else {
       const account = accounts[index];
       failures.push({
@@ -310,7 +342,7 @@ export async function fetchAllCampaignMetadata(
       });
     }
   }
-  return { campaigns, accounts, failures };
+  return { campaigns, adSetGoals, accounts, failures };
 }
 
 export async function fetchAllCampaignData(
@@ -338,16 +370,16 @@ export async function fetchAllCampaignData(
       ]);
 
       // Build budget lookup by campaign ID
-      const budgetMap: Record<string, { budget: number; budgetType: string; budgetRemaining: number | null; objective: string; status: string; effectiveStatus: string }> = {};
+      const budgetMap: Record<string, { budget: number; budgetType: string; budgetRemaining: number | null; objective: string; optimizationGoal: string; status: string; effectiveStatus: string }> = {};
       for (const b of budgetsRaw) {
         const daily = parseFloat(b.daily_budget || "0") / 100;   // Meta returns in cents
         const lifetime = parseFloat(b.lifetime_budget || "0") / 100;
         if (daily > 0) {
-          budgetMap[b.id] = { budget: daily, budgetType: "daily", budgetRemaining: b.budget_remaining ? parseFloat(b.budget_remaining) / 100 : null, objective: b.objective || "", status: b.status || "", effectiveStatus: b.effective_status || "" };
+          budgetMap[b.id] = { budget: daily, budgetType: "daily", budgetRemaining: b.budget_remaining ? parseFloat(b.budget_remaining) / 100 : null, objective: b.objective || "", optimizationGoal: b.optimization_goal || "", status: b.status || "", effectiveStatus: b.effective_status || "" };
         } else if (lifetime > 0) {
-          budgetMap[b.id] = { budget: lifetime, budgetType: "lifetime", budgetRemaining: b.budget_remaining ? parseFloat(b.budget_remaining) / 100 : null, objective: b.objective || "", status: b.status || "", effectiveStatus: b.effective_status || "" };
+          budgetMap[b.id] = { budget: lifetime, budgetType: "lifetime", budgetRemaining: b.budget_remaining ? parseFloat(b.budget_remaining) / 100 : null, objective: b.objective || "", optimizationGoal: b.optimization_goal || "", status: b.status || "", effectiveStatus: b.effective_status || "" };
         } else {
-          budgetMap[b.id] = { budget: 0, budgetType: "-", budgetRemaining: b.budget_remaining ? parseFloat(b.budget_remaining) / 100 : null, objective: b.objective || "", status: b.status || "", effectiveStatus: b.effective_status || "" };
+          budgetMap[b.id] = { budget: 0, budgetType: "-", budgetRemaining: b.budget_remaining ? parseFloat(b.budget_remaining) / 100 : null, objective: b.objective || "", optimizationGoal: b.optimization_goal || "", status: b.status || "", effectiveStatus: b.effective_status || "" };
         }
       }
 
@@ -358,7 +390,7 @@ export async function fetchAllCampaignData(
             (a) => a.action_type === "onsite_conversion.messaging_conversation_started_7d"
           )?.value || "0"
         );
-        const budgetInfo = budgetMap[row.campaign_id] || { budget: 0, budgetType: "-", budgetRemaining: null, objective: "", status: "", effectiveStatus: "" };
+        const budgetInfo = budgetMap[row.campaign_id] || { budget: 0, budgetType: "-", budgetRemaining: null, objective: "", optimizationGoal: "", status: "", effectiveStatus: "" };
 
         return {
           accountId: acc.id,
@@ -370,6 +402,7 @@ export async function fetchAllCampaignData(
           budgetType: budgetInfo.budgetType,
           budgetRemaining: budgetInfo.budgetRemaining,
           objective: budgetInfo.objective,
+          optimizationGoal: budgetInfo.optimizationGoal,
           status: budgetInfo.status,
           effectiveStatus: budgetInfo.effectiveStatus,
           inbox,

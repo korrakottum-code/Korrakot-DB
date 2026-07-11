@@ -19,3 +19,8 @@ test("unknown objective is data incomplete and HR/IG are excluded", () => {
   assert.equal(isExcludedManagementGroup("IG"), true);
   assert.equal(isExcludedManagementGroup("กังสดาล"), false);
 });
+
+test("mixed objectives require review instead of a combined ranking", () => {
+  assert.equal(decisionForBranch({ cpi: 50, cpl: null, inbox: 100, leads: 0, objectiveKnown: true, objectiveCount: 2, objectiveMetric: "unknown" }).decision, "Review");
+  assert.equal(decisionForBranch({ cpi: null, cpl: null, inbox: 0, leads: 0, objectiveKnown: true, objectiveMetric: "clicks" }).decision, "Data incomplete");
+});

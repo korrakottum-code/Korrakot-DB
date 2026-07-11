@@ -23,6 +23,7 @@ export interface AdInsight {
   accountName: string;
   adId: string;
   campaignId?: string;
+  adSetId?: string;
   objective?: string;
   optimizationGoal?: string;
   status?: string;
@@ -74,7 +75,7 @@ async function fetchInsightsForAccount(
     timeRange = `&date_preset=${datePreset}`;
   }
 
-  const fields = "ad_id,ad_name,campaign_id,spend,impressions,clicks,reach,ctr,cpc,cpm,actions,cost_per_action_type";
+  const fields = "ad_id,ad_name,campaign_id,adset_id,spend,impressions,clicks,reach,ctr,cpc,cpm,actions,cost_per_action_type";
   const insights: AdInsight[] = [];
   const initialUrl = `${META_API_BASE}/${accountId}/insights?fields=${fields}&level=ad&time_increment=1${timeRange}&limit=500&access_token=${token}`;
   const result = await fetchGraphPages<Record<string, unknown>>(initialUrl);
@@ -118,6 +119,7 @@ async function fetchInsightsForAccount(
       accountName,
       adId: String(row.ad_id || ""),
       campaignId: String(row.campaign_id || ""),
+      adSetId: String(row.adset_id || ""),
     });
   }
 
@@ -208,6 +210,28 @@ interface CampaignBudgetRaw {
   optimization_goal?: string;
 }
 
+interface AdSetOptimizationRaw {
+  id: string;
+  campaign_id?: string;
+  optimization_goal?: string;
+}
+
+async function fetchAdSetOptimizationGoals(accountId: string, token: string): Promise<Record<string, string>> {
+  const fields = "id,campaign_id,optimization_goal";
+  let nextUrl: string | null = `${META_API_BASE}/${accountId}/adsets?fields=${fields}&limit=500&access_token=${token}`;
+  const goals: Record<string, string> = {};
+  while (nextUrl) {
+    const res = await fetch(nextUrl);
+    const data = await res.json() as { error?: { message: string }; data?: AdSetOptimizationRaw[]; paging?: { next?: string } };
+    if (data.error) throw new Error(data.error.message);
+    for (const row of data.data || []) {
+      if (row.id && row.optimization_goal) goals[row.id] = row.optimization_goal;
+    }
+    nextUrl = data.paging?.next || null;
+  }
+  return goals;
+}
+
 async function fetchCampaignInsights(
   accountId: string,
   token: string,
@@ -265,13 +289,14 @@ async function fetchCampaignBudgets(
 /** Fetch campaign metadata without fetching a second insights time series. */
 export async function fetchAllCampaignMetadata(
   token: string
-): Promise<{ campaigns: CampaignRow[]; accounts: AdAccount[]; failures: FetchFailure[] }> {
+): Promise<{ campaigns: CampaignRow[]; adSetGoals: Record<string, string>; accounts: AdAccount[]; failures: FetchFailure[] }> {
   let accounts: AdAccount[];
   try {
     accounts = await fetchAllAdAccounts(token);
   } catch (error: unknown) {
     return {
       campaigns: [],
+      adSetGoals: {},
       accounts: [],
       failures: [{ scope: "accounts", message: error instanceof Error ? error.message : "Unknown account error" }],
     };
@@ -279,8 +304,8 @@ export async function fetchAllCampaignMetadata(
 
   const results = await Promise.allSettled(
     accounts.map(async (acc) => {
-      const budgets = await fetchCampaignBudgets(acc.id, token);
-      return budgets.map((budget): CampaignRow => ({
+      const [budgets, adSetGoals] = await Promise.all([fetchCampaignBudgets(acc.id, token), fetchAdSetOptimizationGoals(acc.id, token)]);
+      const campaigns = budgets.map((budget): CampaignRow => ({
         accountId: acc.id,
         accountName: acc.name,
         campaignId: budget.id,
@@ -296,14 +321,17 @@ export async function fetchAllCampaignMetadata(
         inbox: 0,
         cpi: 0,
       }));
+      return { campaigns, adSetGoals };
     })
   );
 
   const campaigns: CampaignRow[] = [];
+  const adSetGoals: Record<string, string> = {};
   const failures: FetchFailure[] = [];
   for (const [index, result] of results.entries()) {
     if (result.status === "fulfilled") {
-      campaigns.push(...result.value);
+      campaigns.push(...result.value.campaigns);
+      Object.assign(adSetGoals, result.value.adSetGoals);
     } else {
       const account = accounts[index];
       failures.push({
@@ -314,7 +342,7 @@ export async function fetchAllCampaignMetadata(
       });
     }
   }
-  return { campaigns, accounts, failures };
+  return { campaigns, adSetGoals, accounts, failures };
 }
 
 export async function fetchAllCampaignData(

@@ -96,6 +96,12 @@ export async function GET(req: NextRequest) {
         ...campaign,
         spent: spendByCampaign.get(`${campaign.accountId}|${campaign.campaignId}`) || 0,
       }));
+      const adSetGoals = new Map<string, string>();
+      for (const result of campaignResults) {
+        for (const [adSetId, goal] of Object.entries(result.adSetGoals)) {
+          adSetGoals.set(adSetId, goal);
+        }
+      }
       const campaignMap = new Map(campaigns.map((campaign) => [`${campaign.accountId}|${campaign.campaignId}`, campaign]));
       const enrich = (rows: typeof currentResults[number]["insights"]) => rows.map((row) => {
         const campaign = campaignMap.get(`${row.accountId}|${row.campaignId || ""}`);
@@ -103,7 +109,7 @@ export async function GET(req: NextRequest) {
           ? {
               ...row,
               objective: campaign.objective || undefined,
-              optimizationGoal: campaign.optimizationGoal || undefined,
+              optimizationGoal: campaign.optimizationGoal || (row.adSetId ? adSetGoals.get(row.adSetId) : undefined),
               status: campaign.status || undefined,
               effectiveStatus: campaign.effectiveStatus || undefined,
               budget: campaign.budget,

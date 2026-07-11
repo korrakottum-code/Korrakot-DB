@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import type { AdInsight } from "@/lib/meta";
-import { Play, Image as ImageIcon, X, ChevronDown, ChevronUp, Trophy } from "lucide-react";
+import { Play, Image as ImageIcon, X, ChevronDown, ChevronUp } from "lucide-react";
 import { PROGRAM_MAP } from "@/lib/parser";
 import { hasReliableCost, MIN_BEST_ACTIONS } from "@/lib/metrics";
 
@@ -171,16 +171,21 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
   };
 
   // Build repAdId -> accountId map
-  const adToAccount: Record<string, string> = {};
-  for (const ins of insights) {
-    if (ins.adId) adToAccount[ins.adId] = ins.accountId;
-  }
+  const adToAccount = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const ins of insights) {
+      if (ins.adId) map[ins.adId] = ins.accountId;
+    }
+    return map;
+  }, [insights]);
 
   useEffect(() => {
     // Reset cache when insights change (e.g. date range switch)
     fetchedRef.current = new Set();
+    // Resetting the thumbnail cache is coupled to the incoming insights prop.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCreatives({});
-  }, [insights.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [insights.length]);
 
   const fetchThumbnails = useCallback((targetRows: CreativeRow[]) => {
     const newRows = targetRows.filter((r) => !fetchedRef.current.has(r.groupKey));
@@ -197,7 +202,7 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
         setCreatives((prev) => ({ ...prev, ...remapped }));
       })
       .finally(() => setLoading(false));
-  }, [adToAccount]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [adToAccount]);
 
   // Only fetch top-3 of each program (heroes) on initial load
   useEffect(() => {
@@ -304,8 +309,6 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
           const totalCPI = totalInbox > 0 ? totalSpend / totalInbox : 0;
           const totalCPL = totalLeads > 0 ? totalSpend / totalLeads : 0;
           const medals = ["🥇", "🥈", "🥉"];
-
-          const metricLabel = sortBy === "cpi" ? "CPI" : sortBy === "cpl" ? "CPL" : sortBy === "inbox" ? "Inbox" : sortBy === "leads" ? "Leads" : "Spend";
 
           return (
             <div key={program} className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">

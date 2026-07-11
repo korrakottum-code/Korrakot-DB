@@ -59,6 +59,8 @@ export default function BranchSettings() {
   }, []);
 
   useEffect(() => {
+    // Initial data fetch updates the view after mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { COLORS } from "./theme";
-import type { GroupedRow, TabKey } from "./types";
+import type { GroupedRow } from "./types";
 
 interface Props {
   rows: GroupedRow[];

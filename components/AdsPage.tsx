@@ -60,6 +60,15 @@ interface MetricFilter {
 
 const EMPTY_METRIC: MetricFilter = { min: "", max: "" };
 
+function SortIcon({ col, sortCol, sortDir }: { col: SortCol; sortCol: SortCol; sortDir: SortDir }) {
+  if (sortCol !== col) return <ArrowUpDown className="w-3 h-3 text-gray-500 ml-1" />;
+  return sortDir === "asc" ? (
+    <ChevronUp className="w-3.5 h-3.5 text-indigo-400 ml-1" />
+  ) : (
+    <ChevronDown className="w-3.5 h-3.5 text-indigo-400 ml-1" />
+  );
+}
+
 /* ── tag system ──────────────────────────────── */
 
 const TAGS_STORAGE_KEY = "korrakot_campaign_tags";
@@ -138,14 +147,9 @@ export default function AdsPage() {
   const [tagFilter, setTagFilter] = useState("all"); // "all" | "untagged" | specific tag
 
   // Tags
-  const [tags, setTags] = useState<Record<string, string>>({});
+  const [tags, setTags] = useState<Record<string, string>>(() => loadTags());
   const [editingTagId, setEditingTagId] = useState<string | null>(null);
   const [customTagInput, setCustomTagInput] = useState("");
-
-  // Load tags from localStorage on mount
-  useEffect(() => {
-    setTags(loadTags());
-  }, []);
 
   const setTag = (campaignId: string, tag: string) => {
     const updated = { ...tags };
@@ -235,6 +239,8 @@ export default function AdsPage() {
 
   useEffect(() => {
     if (datePreset === "custom") return;
+    // Data loading is intentionally scheduled after the effect commit.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load, datePreset]);
 
@@ -349,15 +355,6 @@ export default function AdsPage() {
       setSortCol(col);
       setSortDir(col === "cpi" ? "asc" : "desc");
     }
-  };
-
-  const SortIcon = ({ col }: { col: SortCol }) => {
-    if (sortCol !== col) return <ArrowUpDown className="w-3 h-3 text-gray-500 ml-1" />;
-    return sortDir === "asc" ? (
-      <ChevronUp className="w-3.5 h-3.5 text-indigo-400 ml-1" />
-    ) : (
-      <ChevronDown className="w-3.5 h-3.5 text-indigo-400 ml-1" />
-    );
   };
 
   /* ── clear metric filters ───────────────────── */
@@ -648,13 +645,13 @@ export default function AdsPage() {
                       onClick={() => handleSort("accountId")}
                       className="py-2.5 px-3 text-gray-400 font-medium cursor-pointer select-none hover:text-white transition-colors text-left sticky left-[32px] z-20 bg-gray-900 min-w-[140px]"
                     >
-                      <span className="inline-flex items-center gap-0.5">Account <SortIcon col="accountId" /></span>
+                      <span className="inline-flex items-center gap-0.5">Account <SortIcon col="accountId" sortCol={sortCol} sortDir={sortDir} /></span>
                     </th>
                     <th
                       onClick={() => handleSort("campaignName")}
                       className="py-2.5 px-3 text-gray-400 font-medium cursor-pointer select-none hover:text-white transition-colors text-left sticky left-[172px] z-20 bg-gray-900 min-w-[250px] after:content-[''] after:absolute after:right-0 after:top-0 after:bottom-0 after:w-[3px] after:bg-gradient-to-r after:from-gray-700/50 after:to-transparent"
                     >
-                      <span className="inline-flex items-center gap-0.5">Campaign Name <SortIcon col="campaignName" /></span>
+                      <span className="inline-flex items-center gap-0.5">Campaign Name <SortIcon col="campaignName" sortCol={sortCol} sortDir={sortDir} /></span>
                     </th>
                     {(
                       [
@@ -676,7 +673,7 @@ export default function AdsPage() {
                           className={`inline-flex items-center gap-0.5 ${align === "right" ? "justify-end w-full" : ""}`}
                         >
                           {label}
-                          <SortIcon col={col} />
+                          <SortIcon col={col} sortCol={sortCol} sortDir={sortDir} />
                         </span>
                       </th>
                     ))}

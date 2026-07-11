@@ -79,6 +79,8 @@ export default function DateRangePicker({ since, until, onApply }: DateRangePick
 
   // Sync when props change
   useEffect(() => {
+    // Keep the editable draft aligned with the parent-selected range.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTempSince(since);
     setTempUntil(until);
   }, [since, until]);

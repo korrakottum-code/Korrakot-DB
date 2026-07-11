@@ -268,7 +268,7 @@ async function fetchCampaignBudgets(
   accountId: string,
   token: string
 ): Promise<CampaignBudgetRaw[]> {
-  const fields = "id,name,daily_budget,lifetime_budget,budget_remaining,objective,optimization_goal,status,effective_status";
+  const fields = "id,name,daily_budget,lifetime_budget,budget_remaining,objective,status,effective_status";
   let nextUrl: string | null =
     `${META_API_BASE}/${accountId}/campaigns?fields=${fields}&limit=500&access_token=${token}`;
 

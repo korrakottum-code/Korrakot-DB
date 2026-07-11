@@ -124,8 +124,7 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
       cpi: r.inbox > 0 ? r.spend / r.inbox : 0,
       cpl: r.leads > 0 ? r.spend / r.leads : 0,
     }))
-    .sort(sortFn)
-    .slice(0, 200);
+    .sort(sortFn);
 
   // Filter by program if set
   const rows = programFilter !== "all"
@@ -134,10 +133,11 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
         return code === programFilter || r.program === programFilter;
       })
     : allRows;
+  const visibleRows = rows.slice(0, 200);
 
   // Group rows by program for hero section
   const programGroups: Record<string, CreativeRow[]> = {};
-  for (const row of rows) {
+  for (const row of visibleRows) {
     const p = row.program || "อื่นๆ";
     if (!programGroups[p]) programGroups[p] = [];
     programGroups[p].push(row);

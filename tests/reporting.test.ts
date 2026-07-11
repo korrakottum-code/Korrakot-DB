@@ -70,6 +70,7 @@ test("daily aggregation recomputes rates from totals", () => {
 test("objective mapping prevents mixing inbox with other objectives", () => {
   assert.equal(objectiveMetric("OUTCOME_LEADS").key, "leads");
   assert.equal(objectiveMetric("MESSAGES").costLabel, "CPI");
+  assert.equal(objectiveMetric("OUTCOME_ENGAGEMENT").key, "inbox");
   assert.equal(objectiveMetric("TRAFFIC").costLabel, "CPC");
   assert.equal(objectiveMetric("AWARENESS").costLabel, "CPM");
   assert.equal(objectiveMetric("UNKNOWN").key, "unknown");

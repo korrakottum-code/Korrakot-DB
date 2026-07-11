@@ -257,6 +257,9 @@ export function objectiveMetric(objective: string | undefined): ObjectiveMetric 
   if (normalized.includes("message") || normalized.includes("messaging")) {
     return { key: "inbox", label: "Inbox", costLabel: "CPI", reason: "Objective เน้นข้อความ จึงใช้ Inbox/CPI เป็นหลัก" };
   }
+  if (normalized.includes("outcome_engagement")) {
+    return { key: "inbox", label: "Inbox", costLabel: "CPI", reason: "Meta ส่งเป็น OUTCOME_ENGAGEMENT จึงใช้ Inbox เป็น proxy ของผลลัพธ์การมีส่วนร่วม; หากต้องแยกเป้าหมายย่อยให้ดู Optimization goal เพิ่ม" };
+  }
   if (normalized.includes("traffic") || normalized.includes("click")) {
     return { key: "clicks", label: "Click", costLabel: "CPC", reason: "Objective เน้น Traffic จึงใช้ Click/CPC เป็นหลัก" };
   }

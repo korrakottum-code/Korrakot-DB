@@ -19,6 +19,7 @@ import {
   Check,
 } from "lucide-react";
 import DateRangePicker from "@/components/DateRangePicker";
+import LogoutButton from "@/components/LogoutButton";
 import type { CampaignRow } from "@/lib/meta";
 
 type FetchFailure = {
@@ -432,6 +433,7 @@ export default function AdsPage() {
               <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
               {loading ? "กำลังโหลด..." : "รีเฟรช"}
             </button>
+            <LogoutButton />
           </div>
         </div>
       </div>

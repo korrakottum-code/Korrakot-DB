@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchAllInsights } from "@/lib/meta";
 import { dedupeAccounts, dedupeInsights } from "@/lib/dedupe";
 import { getServerCache } from "@/lib/server-cache";
+import { consumeApiRateLimit } from "@/lib/rate-limit";
+import { validateDateQuery } from "@/lib/request-validation";
+import { requireInternalApiAuth } from "@/lib/api-auth";
 import { subDays, startOfMonth, endOfMonth, subMonths, format } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 
@@ -86,6 +89,17 @@ function getPresetRanges(preset: string): {
 }
 
 export async function GET(req: NextRequest) {
+  const denied = requireInternalApiAuth(req);
+  if (denied) return denied;
+
+  const requestRate = consumeApiRateLimit(req.headers, "insights", 120, 60_000);
+  if (!requestRate.allowed) {
+    return NextResponse.json(
+      { error: "เรียกข้อมูลบ่อยเกินไป" },
+      { status: 429, headers: { "Retry-After": String(requestRate.retryAfterSeconds) } }
+    );
+  }
+
   const tokens = [
     process.env.META_ACCESS_TOKEN,
     process.env.META_ACCESS_TOKEN_2,
@@ -96,11 +110,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "No META_ACCESS_TOKEN configured" }, { status: 500 });
   }
 
-  const { searchParams } = new URL(req.url);
-  const datePreset = searchParams.get("date_preset") || "last_30d";
-  const customSince = searchParams.get("since");
-  const customUntil = searchParams.get("until");
-  const forceRefresh = searchParams.get("refresh") === "1";
+  const validation = validateDateQuery(req.nextUrl.searchParams);
+  if (!validation.ok) {
+    return NextResponse.json({ error: validation.error }, { status: 400 });
+  }
+  const {
+    datePreset,
+    since: customSince,
+    until: customUntil,
+    forceRefresh,
+  } = validation.value;
+  if (forceRefresh) {
+    const refreshRate = consumeApiRateLimit(req.headers, "insights-refresh", 6, 60_000);
+    if (!refreshRate.allowed) {
+      return NextResponse.json(
+        { error: "กดรีเฟรชบ่อยเกินไป กรุณารอสักครู่" },
+        { status: 429, headers: { "Retry-After": String(refreshRate.retryAfterSeconds) } }
+      );
+    }
+  }
 
   try {
     let ranges: { current: { since: string; until: string }; previous: { since: string; until: string } };

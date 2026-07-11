@@ -20,6 +20,7 @@ import CreativeGrid from "@/components/CreativeGrid";
 import KpiCards from "@/components/KpiCards";
 import FilterBar from "@/components/FilterBar";
 import SortableMetricTable from "@/components/SortableMetricTable";
+import LogoutButton from "@/components/LogoutButton";
 import { COLORS } from "./theme";
 import type { GroupedRow, TabKey } from "./types";
 import { findBestCost } from "@/lib/metrics";
@@ -421,6 +422,7 @@ export default function Dashboard() {
               <Settings2 className="w-4 h-4" />
               <span className="hidden sm:inline">ตั้งค่า</span>
             </Link>
+            <LogoutButton />
           </div>
         </div>
       </div>

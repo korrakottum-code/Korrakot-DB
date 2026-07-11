@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { groupCreativeRequests, normalizeAccountId } from "@/lib/creative-routing";
+import { consumeApiRateLimit } from "@/lib/rate-limit";
+import { validateCreativeQuery } from "@/lib/request-validation";
+import { requireInternalApiAuth } from "@/lib/api-auth";
 
 const META_API_BASE = "https://graph.facebook.com/v19.0";
 const BATCH_SIZE = 50;
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 interface BatchItem {
   code: number;
@@ -194,6 +198,17 @@ async function processCreativeBatch(
 // Creative assets can belong to different ad accounts. Route each request through
 // a token that can access its account instead of always using token #1.
 export async function GET(req: NextRequest) {
+  const denied = requireInternalApiAuth(req);
+  if (denied) return denied;
+
+  const rate = consumeApiRateLimit(req.headers, "creative", 60, 60_000);
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: "เรียกข้อมูล Creative บ่อยเกินไป" },
+      { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } }
+    );
+  }
+
   const tokens = [
     process.env.META_ACCESS_TOKEN,
     process.env.META_ACCESS_TOKEN_2,
@@ -202,8 +217,11 @@ export async function GET(req: NextRequest) {
   if (!tokens.length) return NextResponse.json({ error: "No token" }, { status: 500 });
 
   const { searchParams } = new URL(req.url);
-  const rawAdIds = searchParams.get("ad_ids")?.split(",").filter(Boolean) || [];
-  const rawAccountIds = searchParams.get("account_ids")?.split(",").filter(Boolean) || [];
+  const validation = validateCreativeQuery(searchParams);
+  if (!validation.ok) {
+    return NextResponse.json({ error: validation.error }, { status: 400 });
+  }
+  const { adIds: rawAdIds, accountIds: rawAccountIds } = validation.value;
   const pairs = rawAdIds.map((adId, index) => ({ adId, accountId: rawAccountIds[index] || "" }));
   const uniquePairs = [...new Map(pairs.map((pair) => [`${pair.adId}|${pair.accountId}`, pair])).values()];
   if (!uniquePairs.length) return NextResponse.json({});

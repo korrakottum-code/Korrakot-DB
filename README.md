@@ -27,9 +27,19 @@ cp .env.example .env.local
 META_ACCESS_TOKEN=วางโทเคนตัวที่หนึ่งตรงนี้
 META_ACCESS_TOKEN_2=วางโทเคนตัวที่สองตรงนี้ถ้ามี
 META_ACCESS_TOKEN_3=วางโทเคนตัวที่สามตรงนี้ถ้ามี
+INTERNAL_DASHBOARD_PASSWORD=รหัสผ่านสำหรับทีมอย่างน้อย12ตัวอักษร
+INTERNAL_DASHBOARD_SECRET=กุญแจสุ่มอย่างน้อย32ตัวอักษร
 ```
 
 ห้ามใช้ชื่อที่ขึ้นต้นด้วย `NEXT_PUBLIC_` และห้าม commit token ลง Git เพราะ API จะอ่าน token เฉพาะฝั่ง server
+
+สร้างค่า `INTERNAL_DASHBOARD_SECRET` แบบสุ่มได้ด้วย:
+
+```bash
+openssl rand -base64 48
+```
+
+ถ้ายังไม่ตั้งรหัสผ่านและ secret ระบบจะปิดการเข้าถึงแบบ fail closed และไม่เปิดข้อมูล Dashboard/API
 
 เริ่มระบบในเครื่องด้วย:
 
@@ -43,10 +53,13 @@ npm run dev
 
 1. เปิด Project ใน Vercel แล้วไปที่ **Settings → Environment Variables**
 2. เพิ่ม `META_ACCESS_TOKEN`, `META_ACCESS_TOKEN_2` และ `META_ACCESS_TOKEN_3` ตามจำนวนที่ใช้
-3. เลือก Environment ให้ตรงกับ deployment ที่จะเปิดใช้ เช่น Production หรือ Preview
-4. กด **Redeploy** หลังบันทึกตัวแปรทุกครั้ง
+3. เพิ่ม `INTERNAL_DASHBOARD_PASSWORD` และ `INTERNAL_DASHBOARD_SECRET` โดยใช้ค่าเดียวกันใน Preview และ Production ถ้าต้องการ Login ชุดเดียวกัน
+4. เลือก Environment ให้ตรงกับ deployment ที่จะเปิดใช้ เช่น Production หรือ Preview
+5. กด **Redeploy** หลังบันทึกตัวแปรทุกครั้ง
 
 ถ้าหน้าจอขึ้น `No META_ACCESS_TOKEN configured` ให้ตรวจชื่อ variable, Environment และการ Redeploy ก่อน การแก้ `.env.local` ในเครื่องจะไม่เปลี่ยนค่าใน Vercel
+
+Session Login มีอายุ 12 ชั่วโมง ผู้ใช้สามารถกด **ออกจากระบบ** จากส่วนหัวของแต่ละหน้า รหัสผ่านและ secret ต้องไม่ส่งทางแชตสาธารณะหรือบันทึกลง repository
 
 ## แก้รายชื่อสาขา (Read only)
 

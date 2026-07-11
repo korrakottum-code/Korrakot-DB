@@ -3,8 +3,9 @@ import { groupCreativeRequests, normalizeAccountId } from "@/lib/creative-routin
 import { consumeApiRateLimit } from "@/lib/rate-limit";
 import { validateCreativeQuery } from "@/lib/request-validation";
 import { requireInternalApiAuth } from "@/lib/api-auth";
+import { META_GRAPH_API_BASE } from "@/lib/meta-version";
 
-const META_API_BASE = "https://graph.facebook.com/v19.0";
+const META_API_BASE = META_GRAPH_API_BASE;
 const BATCH_SIZE = 50;
 
 export const dynamic = "force-dynamic";

@@ -1,4 +1,5 @@
 import { parseAdName, ParsedAdName } from "./parser";
+import { fetchGraphPages } from "./pagination";
 
 const META_API_BASE = "https://graph.facebook.com/v19.0";
 
@@ -58,48 +59,49 @@ async function fetchInsightsForAccount(
   }
 
   const fields = "ad_id,ad_name,spend,impressions,clicks,reach,ctr,cpc,cpm,actions,cost_per_action_type";
-  const url = `${META_API_BASE}/${accountId}/insights?fields=${fields}&level=ad${timeRange}&limit=500&access_token=${token}`;
+  const insights: AdInsight[] = [];
+  const initialUrl = `${META_API_BASE}/${accountId}/insights?fields=${fields}&level=ad${timeRange}&limit=500&access_token=${token}`;
+  const result = await fetchGraphPages<Record<string, unknown>>(initialUrl);
 
-  const res = await fetch(url);
-  const data = await res.json();
-
-  if (data.error) {
-    console.warn(`Error fetching ${accountId}: ${data.error.message}`);
+  if (result.error) {
+    console.warn(`Error fetching ${accountId}: ${result.error.message}`);
     return [];
   }
 
-  const insights: AdInsight[] = [];
-  for (const row of data.data || []) {
+  for (const row of result.data) {
     if (!row.ad_name) continue;
-    const parsed = parseAdName(row.ad_name);
+    const adName = String(row.ad_name);
+    const parsed = parseAdName(adName);
 
     const getAction = (actions: {action_type: string; value: string}[], type: string) =>
       parseInt(actions?.find((a) => a.action_type === type)?.value || "0");
     const getCost = (costs: {action_type: string; value: string}[], type: string) =>
       parseFloat(costs?.find((a) => a.action_type === type)?.value || "0");
 
-    const inbox = getAction(row.actions, "onsite_conversion.messaging_conversation_started_7d");
-    const leads = getAction(row.actions, "lead");
-    const spend = parseFloat(row.spend || "0");
+    const actions = row.actions as { action_type: string; value: string }[];
+    const costs = row.cost_per_action_type as { action_type: string; value: string }[];
+    const inbox = getAction(actions, "onsite_conversion.messaging_conversation_started_7d");
+    const leads = getAction(actions, "lead");
+    const spend = parseFloat(String(row.spend || "0"));
 
     insights.push({
-      adName: row.ad_name,
+      adName,
       parsed,
       spend,
-      impressions: parseInt(row.impressions || "0"),
-      clicks: parseInt(row.clicks || "0"),
-      reach: parseInt(row.reach || "0"),
-      ctr: parseFloat(row.ctr || "0"),
-      cpc: parseFloat(row.cpc || "0"),
-      cpm: parseFloat(row.cpm || "0"),
+      impressions: parseInt(String(row.impressions || "0")),
+      clicks: parseInt(String(row.clicks || "0")),
+      reach: parseInt(String(row.reach || "0")),
+      ctr: parseFloat(String(row.ctr || "0")),
+      cpc: parseFloat(String(row.cpc || "0")),
+      cpm: parseFloat(String(row.cpm || "0")),
       inbox,
-      cpi: getCost(row.cost_per_action_type, "onsite_conversion.messaging_conversation_started_7d") || (inbox > 0 ? spend / inbox : 0),
+      cpi: getCost(costs, "onsite_conversion.messaging_conversation_started_7d") || (inbox > 0 ? spend / inbox : 0),
       leads,
-      cpl: getCost(row.cost_per_action_type, "lead") || (leads > 0 ? spend / leads : 0),
-      date: row.date_start || "",
+      cpl: getCost(costs, "lead") || (leads > 0 ? spend / leads : 0),
+      date: String(row.date_start || ""),
       accountId,
       accountName,
-      adId: row.ad_id || "",
+      adId: String(row.ad_id || ""),
     });
   }
 

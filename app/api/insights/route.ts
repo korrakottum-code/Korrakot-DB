@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchAllInsights } from "@/lib/meta";
 import { dedupeAccounts, dedupeInsights } from "@/lib/dedupe";
+import { getServerCache } from "@/lib/server-cache";
 import { subDays, startOfMonth, endOfMonth, subMonths, format } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 
 const TZ = "Asia/Bangkok";
+const CACHE_TTL_MS = 10 * 60 * 1000;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -98,6 +100,7 @@ export async function GET(req: NextRequest) {
   const datePreset = searchParams.get("date_preset") || "last_30d";
   const customSince = searchParams.get("since");
   const customUntil = searchParams.get("until");
+  const forceRefresh = searchParams.get("refresh") === "1";
 
   try {
     let ranges: { current: { since: string; until: string }; previous: { since: string; until: string } };
@@ -117,25 +120,39 @@ export async function GET(req: NextRequest) {
       ranges = getPresetRanges(datePreset);
     }
 
-    // Fetch current and previous period insights concurrently
-    const [currentResults, prevResults] = await Promise.all([
-      Promise.all(tokens.map((token) => fetchAllInsights(token, undefined, ranges.current.since, ranges.current.until))),
-      Promise.all(tokens.map((token) => fetchAllInsights(token, undefined, ranges.previous.since, ranges.previous.until))),
-    ]);
+    const cacheKey = [
+      "insights",
+      ranges.current.since,
+      ranges.current.until,
+      ranges.previous.since,
+      ranges.previous.until,
+    ].join(":");
+    const cached = await getServerCache(cacheKey, CACHE_TTL_MS, async () => {
+      // Fetch current and previous period insights concurrently.
+      const [currentResults, prevResults] = await Promise.all([
+        Promise.all(tokens.map((token) => fetchAllInsights(token, undefined, ranges.current.since, ranges.current.until))),
+        Promise.all(tokens.map((token) => fetchAllInsights(token, undefined, ranges.previous.since, ranges.previous.until))),
+      ]);
 
-    const insights = dedupeInsights(currentResults.flatMap((r) => r.insights));
-    const previousInsights = dedupeInsights(prevResults.flatMap((r) => r.insights));
-    const accounts = dedupeAccounts(currentResults.flatMap((r) => r.accounts));
-    const failures = [
-      ...currentResults.flatMap((r, tokenIndex) =>
-        r.failures.map((failure) => ({ ...failure, tokenIndex: tokenIndex + 1, period: "current" }))
-      ),
-      ...prevResults.flatMap((r, tokenIndex) =>
-        r.failures.map((failure) => ({ ...failure, tokenIndex: tokenIndex + 1, period: "previous" }))
-      ),
-    ];
+      const insights = dedupeInsights(currentResults.flatMap((r) => r.insights));
+      const previousInsights = dedupeInsights(prevResults.flatMap((r) => r.insights));
+      const accounts = dedupeAccounts(currentResults.flatMap((r) => r.accounts));
+      const failures = [
+        ...currentResults.flatMap((r, tokenIndex) =>
+          r.failures.map((failure) => ({ ...failure, tokenIndex: tokenIndex + 1, period: "current" }))
+        ),
+        ...prevResults.flatMap((r, tokenIndex) =>
+          r.failures.map((failure) => ({ ...failure, tokenIndex: tokenIndex + 1, period: "previous" }))
+        ),
+      ];
 
-    return NextResponse.json({ insights, previousInsights, accounts, failures });
+      return { insights, previousInsights, accounts, failures };
+    }, forceRefresh);
+
+    return NextResponse.json({
+      ...cached.value,
+      cache: { hit: cached.hit, fetchedAt: cached.fetchedAt },
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

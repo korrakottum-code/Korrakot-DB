@@ -114,6 +114,7 @@ export default function AdsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [fetchFailures, setFetchFailures] = useState<FetchFailure[]>([]);
+  const [serverCacheHit, setServerCacheHit] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   // Date
@@ -183,11 +184,12 @@ export default function AdsPage() {
         try {
           const cached = sessionStorage.getItem(cacheKey);
           if (cached) {
-            const { data, failures, ts } = JSON.parse(cached);
+            const { data, failures, fetchedAt, ts } = JSON.parse(cached);
             if (Date.now() - ts < 15 * 60 * 1000) {
               setCampaigns(data || []);
               setFetchFailures(failures || []);
-              setLastUpdated(new Date(ts));
+              setServerCacheHit(true);
+              setLastUpdated(new Date(fetchedAt || ts));
               return;
             }
           }
@@ -197,6 +199,7 @@ export default function AdsPage() {
       setLoading(true);
       setError("");
       setFetchFailures([]);
+      setServerCacheHit(false);
 
       try {
         let url: string;
@@ -205,17 +208,20 @@ export default function AdsPage() {
         } else {
           url = `/api/campaigns?date_preset=${datePreset}`;
         }
+        if (force) url += `${url.includes("?") ? "&" : "?"}refresh=1`;
         const res = await fetch(url);
         const data = await res.json();
         if (data.error) throw new Error(data.error);
 
         const rows: CampaignRow[] = data.campaigns || [];
         const failures: FetchFailure[] = data.failures || [];
+        const fetchedAt = data.cache?.fetchedAt || new Date().toISOString();
         setCampaigns(rows);
         setFetchFailures(failures);
-        setLastUpdated(new Date());
+        setServerCacheHit(Boolean(data.cache?.hit));
+        setLastUpdated(new Date(fetchedAt));
         try {
-          sessionStorage.setItem(cacheKey, JSON.stringify({ data: rows, failures, ts: Date.now() }));
+          sessionStorage.setItem(cacheKey, JSON.stringify({ data: rows, failures, fetchedAt, ts: Date.now() }));
         } catch {}
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
@@ -386,7 +392,8 @@ export default function AdsPage() {
             </div>
             {lastUpdated && (
               <p className="text-xs text-gray-400 mt-0.5">
-                อัปเดตล่าสุด: {lastUpdated.toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok" })}
+                อัปเดตข้อมูล: {lastUpdated.toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok" })}
+                {serverCacheHit && <span className="text-slate-500"> (จาก cache)</span>}
               </p>
             )}
           </div>

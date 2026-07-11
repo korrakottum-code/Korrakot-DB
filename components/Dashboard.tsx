@@ -23,6 +23,15 @@ import SortableMetricTable from "@/components/SortableMetricTable";
 import { COLORS } from "./theme";
 import type { GroupedRow, TabKey } from "./types";
 
+type FetchFailure = {
+  scope: string;
+  accountId?: string;
+  accountName?: string;
+  message: string;
+  tokenIndex?: number;
+  period?: string;
+};
+
 const DATE_PRESETS = [
   { label: "วันนี้", value: "today" },
   { label: "เมื่อวาน", value: "yesterday" },
@@ -71,6 +80,7 @@ export default function Dashboard() {
   const [prevInsights, setPrevInsights] = useState<AdInsight[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [fetchFailures, setFetchFailures] = useState<FetchFailure[]>([]);
   const [datePreset, setDatePreset] = useState("today");
   const [tab, setTab] = useState<TabKey>("branch");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -161,10 +171,11 @@ export default function Dashboard() {
       try {
         const cached = sessionStorage.getItem(cacheKey);
         if (cached) {
-          const { data, prevData, ts } = JSON.parse(cached);
+          const { data, prevData, failures, ts } = JSON.parse(cached);
           if (Date.now() - ts < 15 * 60 * 1000) {
             setInsights(data || []);
             setPrevInsights(prevData || []);
+            setFetchFailures(failures || []);
             setLastUpdated(new Date(ts));
             return;
           }
@@ -173,6 +184,7 @@ export default function Dashboard() {
     }
     setLoading(true);
     setError("");
+    setFetchFailures([]);
     try {
       let url: string;
       if (datePreset === "custom") {
@@ -185,11 +197,13 @@ export default function Dashboard() {
       if (data.error) throw new Error(data.error);
       const current = data.insights || [];
       const prev = data.previousInsights || [];
+      const failures: FetchFailure[] = data.failures || [];
       setInsights(current);
       setPrevInsights(prev);
+      setFetchFailures(failures);
       setLastUpdated(new Date());
       try {
-        sessionStorage.setItem(cacheKey, JSON.stringify({ data: current, prevData: prev, ts: Date.now() }));
+        sessionStorage.setItem(cacheKey, JSON.stringify({ data: current, prevData: prev, failures, ts: Date.now() }));
       } catch {}
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
@@ -404,6 +418,19 @@ export default function Dashboard() {
         {error && (
           <div className="bg-red-900/40 border border-red-700 rounded-lg px-4 py-3 text-red-300 text-sm">
             ❌ {error}
+          </div>
+        )}
+
+        {fetchFailures.length > 0 && (
+          <div className="bg-orange-900/25 border border-orange-700/60 rounded-lg px-4 py-3 text-orange-200 text-sm">
+            <p className="font-medium">⚠️ ดึงข้อมูลไม่ครบ {fetchFailures.length} รายการ</p>
+            <ul className="mt-1 space-y-0.5 text-xs text-orange-300/90">
+              {fetchFailures.map((failure, index) => (
+                <li key={`${failure.accountId || failure.scope}-${index}`}>
+                  {failure.accountName || failure.accountId || `Token #${failure.tokenIndex || "?"}`} — {failure.message}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 

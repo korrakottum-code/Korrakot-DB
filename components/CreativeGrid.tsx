@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import type { AdInsight } from "@/lib/meta";
 import { Play, Image as ImageIcon, X, ChevronDown, ChevronUp, Trophy } from "lucide-react";
 import { PROGRAM_MAP } from "@/lib/parser";
+import { hasReliableCost, MIN_BEST_ACTIONS } from "@/lib/metrics";
 
 interface ModalData {
   thumbnailUrl: string;
@@ -54,6 +55,10 @@ function fmtB(n: number) {
 }
 function fmt(n: number) {
   return n.toLocaleString("th-TH", { maximumFractionDigits: 0 });
+}
+
+function hasReliableMetric(row: Pick<CreativeRow, "spend" | "inbox" | "leads">, metric: "cpi" | "cpl") {
+  return hasReliableCost(row, metric === "cpi" ? "inbox" : "leads");
 }
 
 type SortKey = "spend" | "inbox" | "cpi" | "leads" | "cpl";
@@ -110,8 +115,16 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
   }
 
   const sortFn = (a: CreativeRow, b: CreativeRow) => {
-    if (sortBy === "cpi") return (a.inbox > 0 ? a.cpi : Infinity) - (b.inbox > 0 ? b.cpi : Infinity);
-    if (sortBy === "cpl") return (a.leads > 0 ? a.cpl : Infinity) - (b.leads > 0 ? b.cpl : Infinity);
+    if (sortBy === "cpi") {
+      const aValue = hasReliableMetric(a, "cpi") ? a.cpi : Infinity;
+      const bValue = hasReliableMetric(b, "cpi") ? b.cpi : Infinity;
+      return aValue - bValue || b.inbox - a.inbox;
+    }
+    if (sortBy === "cpl") {
+      const aValue = hasReliableMetric(a, "cpl") ? a.cpl : Infinity;
+      const bValue = hasReliableMetric(b, "cpl") ? b.cpl : Infinity;
+      return aValue - bValue || b.leads - a.leads;
+    }
     if (sortBy === "inbox") return b.inbox - a.inbox;
     if (sortBy === "leads") return b.leads - a.leads;
     return b.spend - a.spend;
@@ -124,8 +137,7 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
       cpi: r.inbox > 0 ? r.spend / r.inbox : 0,
       cpl: r.leads > 0 ? r.spend / r.leads : 0,
     }))
-    .sort(sortFn)
-    .slice(0, 200);
+    .sort(sortFn);
 
   // Filter by program if set
   const rows = programFilter !== "all"
@@ -134,10 +146,11 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
         return code === programFilter || r.program === programFilter;
       })
     : allRows;
+  const visibleRows = rows.slice(0, 200);
 
   // Group rows by program for hero section
   const programGroups: Record<string, CreativeRow[]> = {};
-  for (const row of rows) {
+  for (const row of visibleRows) {
     const p = row.program || "อื่นๆ";
     if (!programGroups[p]) programGroups[p] = [];
     programGroups[p].push(row);
@@ -248,8 +261,8 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
                 {[
                   { label: "Spend", value: fmtB(modal.spend), color: "text-emerald-400" },
                   { label: "Inbox", value: fmt(modal.inbox), color: "text-purple-400" },
-                  { label: "CPI", value: modal.inbox > 0 ? fmtB(modal.cpi) : "-", color: "text-yellow-400" },
-                  { label: "CPL", value: modal.leads > 0 ? fmtB(modal.cpl) : "-", color: "text-pink-400" },
+                  { label: "CPI", value: modal.spend > 0 && modal.inbox >= MIN_BEST_ACTIONS ? fmtB(modal.cpi) : "ข้อมูลน้อย", color: "text-yellow-400" },
+                  { label: "CPL", value: modal.spend > 0 && modal.leads >= MIN_BEST_ACTIONS ? fmtB(modal.cpl) : "ข้อมูลน้อย", color: "text-pink-400" },
                 ].map((s) => (
                   <div key={s.label} className="bg-gray-800 rounded-lg p-2 text-center">
                     <p className="text-xs text-gray-500">{s.label}</p>
@@ -277,6 +290,7 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
             {k === "spend" ? "Spend" : k === "inbox" ? "Inbox" : k === "cpi" ? "CPI ต่ำสุด" : k === "cpl" ? "CPL ต่ำสุด" : "Leads"}
           </button>
         ))}
+        <span className="text-[10px] text-gray-500 whitespace-nowrap">CPI/CPL ใช้เฉพาะรายการที่มีผลลัพธ์ ≥ {MIN_BEST_ACTIONS}</span>
       </div>
 
       {/* Hero section — one program group per row */}
@@ -331,8 +345,8 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
                         <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-1 py-0.5">
                           <p className="text-[10px] font-mono text-indigo-300 truncate">{row.groupKey}</p>
                           <p className="text-[10px] text-emerald-400 font-semibold">
-                            {sortBy === "cpi" ? (row.inbox > 0 ? fmtB(row.cpi) : "-")
-                              : sortBy === "cpl" ? (row.leads > 0 ? fmtB(row.cpl) : "-")
+                            {sortBy === "cpi" ? (hasReliableMetric(row, "cpi") ? fmtB(row.cpi) : "ข้อมูลน้อย")
+                              : sortBy === "cpl" ? (hasReliableMetric(row, "cpl") ? fmtB(row.cpl) : "ข้อมูลน้อย")
                               : sortBy === "inbox" ? fmt(row.inbox)
                               : sortBy === "leads" ? fmt(row.leads)
                               : fmtB(row.spend)}
@@ -415,11 +429,14 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
                           <div className="p-2 space-y-0.5">
                             <p className="text-xs font-mono text-indigo-300 truncate">{row.awCodeBase}-{row.creativeId}</p>
                             <p className="text-xs text-gray-400 truncate">{row.sub && row.sub !== "รวม" ? row.sub : ""}{row.branchCount > 1 ? ` (${row.branchCount} สาขา)` : ""}</p>
+                            {(!hasReliableMetric(row, "cpi") || !hasReliableMetric(row, "cpl")) && (
+                              <p className="text-[10px] text-slate-500">ข้อมูลน้อยสำหรับการตัดสินผล</p>
+                            )}
                             <div className="grid grid-cols-2 gap-x-1.5 pt-1 border-t border-gray-700">
                               <div><p className="text-xs text-gray-500">Spend</p><p className="text-xs font-medium text-emerald-400">{fmtB(row.spend)}</p></div>
                               <div><p className="text-xs text-gray-500">Inbox</p><p className="text-xs font-medium text-purple-400">{fmt(row.inbox)}</p></div>
-                              <div><p className="text-xs text-gray-500">CPI</p><p className="text-xs font-medium text-yellow-400">{row.inbox > 0 ? fmtB(row.cpi) : "-"}</p></div>
-                              <div><p className="text-xs text-gray-500">CPL</p><p className="text-xs font-medium text-pink-400">{row.leads > 0 ? fmtB(row.cpl) : "-"}</p></div>
+                              <div><p className="text-xs text-gray-500">CPI</p><p className="text-xs font-medium text-yellow-400">{hasReliableMetric(row, "cpi") ? fmtB(row.cpi) : "ข้อมูลน้อย"}</p></div>
+                              <div><p className="text-xs text-gray-500">CPL</p><p className="text-xs font-medium text-pink-400">{hasReliableMetric(row, "cpl") ? fmtB(row.cpl) : "ข้อมูลน้อย"}</p></div>
                             </div>
                           </div>
                         </div>

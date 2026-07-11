@@ -22,6 +22,7 @@ import FilterBar from "@/components/FilterBar";
 import SortableMetricTable from "@/components/SortableMetricTable";
 import { COLORS } from "./theme";
 import type { GroupedRow, TabKey } from "./types";
+import { findBestCost } from "@/lib/metrics";
 
 type FetchFailure = {
   scope: string;
@@ -62,8 +63,7 @@ function groupBy(insights: AdInsight[], key: TabKey): GroupedRow[] {
       cpi: r.inbox > 0 ? r.spend / r.inbox : 0,
       cpl: r.leads > 0 ? r.spend / r.leads : 0,
     }))
-    .sort((a, b) => b.spend - a.spend)
-    .slice(0, 50);
+    .sort((a, b) => b.spend - a.spend);
 }
 
 function fmt(n: number) {
@@ -93,6 +93,8 @@ export default function Dashboard() {
   const [customUntil, setCustomUntil] = useState("");
   const [excludedBranches, setExcludedBranches] = useState<Set<string>>(new Set());
   const [dynamicBranchCodes, setDynamicBranchCodes] = useState<Set<string>>(new Set());
+  const [testBranchNames, setTestBranchNames] = useState<Set<string>>(new Set());
+  const [showTestBranches, setShowTestBranches] = useState(false);
 
   // Load dynamic branch codes (added via /settings) so unknown-branch detection stays in sync
   useEffect(() => {
@@ -101,6 +103,11 @@ export default function Dashboard() {
       .then((data) => {
         if (data?.branches) {
           setDynamicBranchCodes(new Set(Object.keys(data.branches)));
+          setTestBranchNames(new Set(
+            Object.values(data.branches)
+              .filter((entry: unknown) => (entry as { isTest?: boolean }).isTest)
+              .map((entry: unknown) => (entry as { name: string }).name)
+          ));
         }
       })
       .catch(() => {});
@@ -237,6 +244,7 @@ export default function Dashboard() {
     const b = i.parsed.branch || "";
     // Exclude user-hidden branches
     if (excludedBranches.size > 0 && excludedBranches.has(b)) return false;
+    if (!showTestBranches && testBranchNames.has(b)) return false;
     if (tab === "branch") {
       if (branchFilter === "classgo" && !b.startsWith("Class Go")) return false;
       if (branchFilter === "class" && b.startsWith("Class Go")) return false;
@@ -260,6 +268,7 @@ export default function Dashboard() {
     const b = i.parsed.branch || "";
     // Exclude user-hidden branches
     if (excludedBranches.size > 0 && excludedBranches.has(b)) return false;
+    if (!showTestBranches && testBranchNames.has(b)) return false;
     if (tab === "branch") {
       if (branchFilter === "classgo" && !b.startsWith("Class Go")) return false;
       if (branchFilter === "class" && b.startsWith("Class Go")) return false;
@@ -283,7 +292,9 @@ export default function Dashboard() {
     .sort()
     .map((code) => ({ code, label: PROGRAM_MAP[code] || code }));
 
-  const branchOptionsAll = [...new Set(insights.map((i) => i.parsed.branch).filter(Boolean))].sort();
+  const branchOptionsAll = [...new Set(insights.map((i) => i.parsed.branch).filter(Boolean))]
+    .filter((b) => showTestBranches || !testBranchNames.has(b))
+    .sort();
   const branchOptions = branchOptionsAll.filter((b) => {
     if (branchFilter === "classgo") return b.startsWith("Class Go");
     if (branchFilter === "class") return !b.startsWith("Class Go");
@@ -318,21 +329,14 @@ export default function Dashboard() {
     return entries[0] ? { name: entries[0][0], spend: entries[0][1] } : null;
   })();
 
-  const bestCPI = (() => {
-    const withInbox = filteredInsights.filter((i) => i.inbox > 0);
-    if (!withInbox.length) return null;
-    const sorted = [...withInbox].sort((a, b) => (a.spend / a.inbox) - (b.spend / b.inbox));
-    const best = sorted[0];
-    return { name: best.parsed.awCode || best.adName, value: best.spend / best.inbox };
-  })();
-
-  const bestCPL = (() => {
-    const withLeads = filteredInsights.filter((i) => i.leads > 0);
-    if (!withLeads.length) return null;
-    const sorted = [...withLeads].sort((a, b) => (a.spend / a.leads) - (b.spend / b.leads));
-    const best = sorted[0];
-    return { name: best.parsed.awCode || best.adName, value: best.spend / best.leads };
-  })();
+  const costRows = filteredInsights.map((i) => ({
+    name: i.parsed.awCode || i.adName,
+    spend: i.spend,
+    inbox: i.inbox,
+    leads: i.leads,
+  }));
+  const bestCPI = findBestCost(costRows, "inbox");
+  const bestCPL = findBestCost(costRows, "leads");
 
   const rawChartData = groupBy(filteredInsights, tab);
   const chartData = [...rawChartData].sort((a, b) => {
@@ -346,7 +350,7 @@ export default function Dashboard() {
     }
     if (typeof av === "string") return tableSort.dir === "asc" ? av.localeCompare(bv as string) : (bv as string).localeCompare(av);
     return tableSort.dir === "asc" ? (av as number) - (bv as number) : (bv as number) - (av as number);
-  });
+  }).slice(0, 50);
 
   const tabs: { key: TabKey; label: string }[] = [
     { key: "branch", label: "สาขา" },
@@ -600,6 +604,14 @@ export default function Dashboard() {
               onExcludedBranches={setExcludedBranches}
               allBranchNames={branchOptionsAll}
             />
+            {testBranchNames.size > 0 && (
+              <button
+                onClick={() => setShowTestBranches((value) => !value)}
+                className="mt-2 px-3 py-1.5 rounded-lg text-xs text-amber-300 border border-amber-700/50 bg-amber-900/20 hover:bg-amber-900/40 transition-colors"
+              >
+                {showTestBranches ? "ซ่อนสาขาเทส" : "แสดงสาขาเทส"}
+              </button>
+            )}
           </div>
 
           {loading ? (
@@ -608,7 +620,7 @@ export default function Dashboard() {
               กำลังดึงข้อมูลจาก Meta API...
             </div>
           ) : tab === "creative" ? (
-            <CreativeGrid insights={insights} branchFilter={branchFilter} branchName={branchNameFilter} programFilter={programFilter} />
+            <CreativeGrid insights={filteredInsights} />
           ) : chartData.length === 0 ? (
             <div className="flex items-center justify-center h-64 text-gray-500">
               ไม่มีข้อมูล

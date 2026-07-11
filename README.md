@@ -11,6 +11,7 @@
 - แสดงรูป/วิดีโอของ Creative พร้อมจัดอันดับตาม metric
 - เก็บผลตอบกลับไว้ใน server cache 10 นาที และมีปุ่มรีเฟรชเพื่อดึงใหม่ทันที
 - ใช้เวลาเขต `Asia/Bangkok` ในการคำนวณช่วงวันที่
+- ใช้ Meta Graph API แบบ pin version เดียวที่ `v25.0` ผ่าน `lib/meta-version.ts` เพื่อให้ Insights, Campaign และ Creative อัปเกรดพร้อมกัน
 - มีหน้า `/management` สำหรับสรุปภาพรวมเพื่อการบริหาร พร้อม Decision Board, pacing, data health และ trend รายวัน
 - Export รายงานเป็น CSV หรือพิมพ์เป็น PDF ได้ โดยใช้ Snapshot ID เดียวกับข้อมูลบนหน้าเว็บ
 
@@ -99,6 +100,8 @@ npm run check
 ```
 
 `npm run check` เป็นคำสั่งรวม test และ TypeScript สำหรับใช้เป็น release gate เดียวกันในแต่ละ PR
+
+การอัปเกรด Meta Graph API ต้องแก้ version ใน `lib/meta-version.ts` ที่เดียว แล้วตรวจ fields ที่ใช้ใน Insights/Campaign/Creative พร้อม Preview และ production smoke test ก่อน Merge
 
 ## แก้ปัญหาที่พบบ่อย
 

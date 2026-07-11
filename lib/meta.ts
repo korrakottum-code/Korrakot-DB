@@ -1,7 +1,8 @@
 import { parseAdName, ParsedAdName } from "./parser";
 import { fetchGraphPages } from "./pagination";
+import { META_GRAPH_API_BASE } from "./meta-version";
 
-const META_API_BASE = "https://graph.facebook.com/v19.0";
+const META_API_BASE = META_GRAPH_API_BASE;
 
 export interface AdInsight {
   adName: string;

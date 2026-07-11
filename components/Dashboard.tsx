@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
-import { RefreshCw, AlertTriangle, MapPin, Layers, Gauge, Target, Settings2 } from "lucide-react";
+import { RefreshCw, AlertTriangle, MapPin, Layers, Gauge, Target, Settings2, BarChart3 } from "lucide-react";
 import Link from "next/link";
 import DateRangePicker from "@/components/DateRangePicker";
 import { BRANCH_MAP, PROGRAM_MAP } from "@/lib/parser";
@@ -414,6 +414,14 @@ export default function Dashboard() {
               <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
               {loading ? "กำลังโหลด..." : "รีเฟรช"}
             </button>
+            <Link
+              href="/management"
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 rounded-lg text-sm text-indigo-200 transition-colors"
+              title="รายงานผู้บริหาร"
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span className="hidden sm:inline">รายงานผู้บริหาร</span>
+            </Link>
             <Link
               href="/settings"
               className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-gray-300 transition-colors"

@@ -12,9 +12,13 @@ export interface BestCostResult {
 
 export const MIN_BEST_ACTIONS = 5;
 
+export function hasReliableCost(row: Pick<CostRow, "spend" | "inbox" | "leads">, action: "inbox" | "leads"): boolean {
+  return row.spend > 0 && row[action] >= MIN_BEST_ACTIONS;
+}
+
 export function findBestCost(row: CostRow[], action: "inbox" | "leads"): BestCostResult | null {
   const candidates = row
-    .filter((item) => item.spend > 0 && item[action] >= MIN_BEST_ACTIONS)
+    .filter((item) => hasReliableCost(item, action))
     .map((item) => ({ name: item.name, value: item.spend / item[action] }))
     .sort((a, b) => a.value - b.value);
 

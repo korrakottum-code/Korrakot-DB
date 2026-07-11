@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   BarChart,
   Bar,
@@ -124,11 +124,23 @@ export default function Dashboard() {
     const bnf = params.get("bnf");
     const pf = params.get("pf");
 
-    if (d) setDatePreset(d);
-    if (t && ["branch", "program", "creative"].includes(t)) setTab(t);
-    if (bf && ["all", "class", "classgo"].includes(bf)) setBranchFilter(bf);
-    if (bnf) setBranchNameFilter(bnf);
-    if (pf) setProgramFilter(pf);
+    if (d) {
+      // URL hydration intentionally updates local state after mount.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDatePreset(d);
+    }
+    if (t && ["branch", "program", "creative"].includes(t)) {
+      setTab(t);
+    }
+    if (bf && ["all", "class", "classgo"].includes(bf)) {
+      setBranchFilter(bf);
+    }
+    if (bnf) {
+      setBranchNameFilter(bnf);
+    }
+    if (pf) {
+      setProgramFilter(pf);
+    }
   }, []);
 
   // Update URL Search Params when active filters change
@@ -229,6 +241,7 @@ export default function Dashboard() {
   useEffect(() => {
     // For custom mode, don't auto-load — require explicit "ค้นหา" click
     if (datePreset === "custom") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load, datePreset]);
 
@@ -307,13 +320,6 @@ export default function Dashboard() {
     if (branchFilter === "class") return !b.startsWith("Class Go");
     return true;
   });
-
-  const totalSpend = filteredInsights.reduce((s, i) => s + i.spend, 0);
-  const totalImpressions = filteredInsights.reduce((s, i) => s + i.impressions, 0);
-  const totalInbox = filteredInsights.reduce((s, i) => s + i.inbox, 0);
-  const totalLeads = filteredInsights.reduce((s, i) => s + i.leads, 0);
-  const avgCPI = totalInbox > 0 ? totalSpend / totalInbox : 0;
-  const avgCPL = totalLeads > 0 ? totalSpend / totalLeads : 0;
 
   // Summary highlights
   const topBranch = (() => {

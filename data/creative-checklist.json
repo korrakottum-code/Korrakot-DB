@@ -1,8 +1,8 @@
 {
-  "version": "2026-07-25.v1",
-  "lastUpdated": "2026-07-25",
+  "version": "2026-07-20.v1",
+  "lastUpdated": "2026-07-20",
   "passThreshold": 80,
-  "sourceNote": "สรุปจาก Top 59 ครีเอทีฟที่ CPI < ฿100 และ Inbox สูงสุด ในช่วง 2025-07-21 ถึง 2026-07-24 (46 static image, 17 วิดีโอ) ควรวิเคราะห์ Top creative ซ้ำทุก 1-2 สัปดาห์ผ่านหน้า /ads > Creative Grid แล้วอัปเดตไฟล์นี้ผ่าน Pull Request",
+  "sourceNote": "สรุปจาก Top 59 ครีเอทีฟที่ CPI < ฿100 และ Inbox สูงสุด ในช่วง 2025-07-21 ถึง 2026-07-24 (46 static image, 17 วิดีโอ) ควรวิเคราะห์ Top creative ซ้ำทุกสัปดาห์ ทุกวันจันทร์ ผ่านหน้า /ads > Creative Grid แล้วอัปเดตไฟล์นี้ผ่าน Pull Request",
   "categories": [
     {
       "id": "hook",

@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 // GET /api/creative-checklist — return the current checklist criteria.
 // Read only: criteria updates go through data/creative-checklist.json via Pull Request,
-// re-derived every 1-2 weeks from the top-performing creatives on /ads.
+// re-derived every Monday (weekly) from the top-performing creatives on /ads.
 export async function GET(req: NextRequest) {
   const denied = requireInternalApiAuth(req);
   if (denied) return denied;

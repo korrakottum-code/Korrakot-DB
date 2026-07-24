@@ -17,10 +17,20 @@ export function isAllowedMetaMediaUrl(rawUrl: string): boolean {
   }
 }
 
-export function isSameOriginRequest(requestUrl: string, origin: string | null): boolean {
+export function isSameOriginRequest(
+  requestUrl: string,
+  origin: string | null,
+  hostHeader?: string | null
+): boolean {
   if (!origin) return false;
   try {
-    return new URL(origin).origin === new URL(requestUrl).origin;
+    const clientOrigin = new URL(origin).origin;
+    if (clientOrigin === new URL(requestUrl).origin) return true;
+    if (hostHeader) {
+      const scheme = new URL(requestUrl).protocol;
+      if (clientOrigin === new URL(`${scheme}//${hostHeader}`).origin) return true;
+    }
+    return false;
   } catch {
     return false;
   }

@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
-import { RefreshCw, AlertTriangle, MapPin, Layers, Gauge, Target, Settings2, BarChart3 } from "lucide-react";
+import { RefreshCw, AlertTriangle, MapPin, Layers, Gauge, Target, Settings2, BarChart3, ClipboardList } from "lucide-react";
 import Link from "next/link";
 import DateRangePicker from "@/components/DateRangePicker";
 import { BRANCH_MAP, PROGRAM_MAP } from "@/lib/parser";
@@ -427,6 +427,14 @@ export default function Dashboard() {
             >
               <BarChart3 className="w-4 h-4" />
               <span className="hidden sm:inline">รายงานผู้บริหาร</span>
+            </Link>
+            <Link
+              href="/creative-review"
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 rounded-lg text-sm text-emerald-200 transition-colors"
+              title="ตรวจสอบคอนเทนท์ก่อนขึ้นแอด"
+            >
+              <ClipboardList className="w-4 h-4" />
+              <span className="hidden sm:inline">ตรวจคอนเทนท์</span>
             </Link>
             <Link
               href="/settings"

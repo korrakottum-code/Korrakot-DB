@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  if (!isSameOriginRequest(request.url, request.headers.get("origin"))) {
+  if (!isSameOriginRequest(request.url, request.headers.get("origin"), request.headers.get("host"))) {
     return NextResponse.json({ error: "คำขอไม่ถูกต้อง" }, { status: 403 });
   }
 

@@ -14,6 +14,7 @@
 - ใช้ Meta Graph API แบบ pin version เดียวที่ `v25.0` ผ่าน `lib/meta-version.ts` เพื่อให้ Insights, Campaign และ Creative อัปเกรดพร้อมกัน
 - มีหน้า `/management` สำหรับสรุปภาพรวมเพื่อการบริหาร พร้อม Decision Board, pacing, data health และ trend รายวัน
 - Export รายงานเป็น CSV หรือพิมพ์เป็น PDF ได้ โดยใช้ Snapshot ID เดียวกับข้อมูลบนหน้าเว็บ
+- มีหน้า `/creative-review` สำหรับให้ทีมตรวจคอนเทนท์ที่กราฟิกทำเสร็จ เทียบกับ checklist ที่สรุปจากครีเอทีฟที่ติด Top จริง ก่อนตัดสินใจขึ้นแอด
 
 ## ความหมายของตัวเลขและการจัดอันดับ
 
@@ -89,6 +90,21 @@ Session Login มีอายุ 12 ชั่วโมง ผู้ใช้ส�
 
 ห้ามแก้ไฟล์นี้ตรงบน production หรือพยายามเรียก `POST /api/branches` และ `DELETE /api/branches` เพราะระบบจะตอบ `405 Method Not Allowed`
 
+## Checklist ตรวจคอนเทนท์ก่อนขึ้นแอด (`/creative-review`)
+
+หน้านี้ใช้ตรวจคอนเทนท์ที่ทีมกราฟิกทำเสร็จ ก่อนตัดสินใจขึ้นแอดจริง โดยเกณฑ์ใน [`data/creative-checklist.json`](./data/creative-checklist.json) สรุปมาจากการวิเคราะห์ครีเอทีฟที่ติด Top จริง (CPI ต่ำ, Inbox สูง) ไม่ใช่ความเห็นส่วนตัว
+
+**ใช้งานแบบไม่ต้องติกเอง**: ลากภาพคอนเทนท์วางในหน้า (หรืออัปโหลดเฟรมตัวแทนจากวิดีโอ) ระบบจะส่งภาพให้ OpenAI GPT-4o Vision วิเคราะห์เทียบกับ checklist ปัจจุบันให้อัตโนมัติ แล้วติ๊กผลลัพธ์ + คำนวณ % ให้เอง (ยังแก้ผลด้วยมือได้ถ้า AI ตัดสินผิด) ต้องตั้งค่า `OPENAI_API_KEY` ใน `.env.local` ก่อนใช้งาน ดู [`.env.example`](./.env.example)
+
+**วิธีวิเคราะห์และรีเฟรช checklist ใหม่ (แนะนำทุก 1-2 สัปดาห์):**
+
+1. เปิดหน้า `/ads` แล้วดู Creative Grid เรียงตาม Inbox/CPI เพื่อหาแอดที่ "ติด Top" ล่าสุด (Spend > 0, จำนวนผลลัพธ์ ≥ 5, CPI อยู่ในเป้าหมาย)
+2. ดูภาพ/วิดีโอของแอดกลุ่มนั้นร่วมกันเป็นชุด สรุปว่ามีอะไรที่ซ้ำกัน เช่น พาดหัว, ราคา, หลักฐาน (before/after), branding, CTA
+3. ปรับ/เพิ่มรายการใน `data/creative-checklist.json` ตามหมวดหมู่เดิม (`hook`, `proof`, `offer`, `branding`, `cta`, `technical`) พร้อมอัปเดต `version`, `lastUpdated` และ `sourceNote`
+4. เปิด Pull Request ตาม Git workflow ปกติ ให้ตรวจสอบก่อน Merge — ห้ามแก้ไฟล์นี้ตรงบน production
+
+การคำนวณ % ใช้ `scoreChecklist()` ใน [`lib/creative-checklist.ts`](./lib/creative-checklist.ts) คิดจากน้ำหนัก (`weight`) ของแต่ละข้อที่ถูกติ๊ก เทียบกับน้ำหนักรวมทั้งหมด และเทียบกับ `passThreshold` เพื่อสรุปว่า "ผ่าน" หรือ "ต้องแก้ไข" พร้อมแสดงรายการที่ขาดให้ทีมกราฟิกไปแก้
+
 ## การตรวจสอบก่อน Merge
 
 ใช้คำสั่งเหล่านี้จากโฟลเดอร์โปรเจกต์:
@@ -131,3 +147,6 @@ Creative บางรายการอาจไม่มี thumbnail หรื
 | `app/management/page.tsx` | หน้า Management Reporting แบบ read-only |
 | `lib/reporting.ts` | ช่วงเวลา, การรวมยอด, objective metric, confidence และ pacing |
 | `lib/report-export.ts` | Snapshot ID และ CSV export ที่ไม่ใส่ข้อมูลลับ |
+| `app/creative-review/page.tsx` | หน้า Checklist ตรวจคอนเทนท์ก่อนขึ้นแอด |
+| `data/creative-checklist.json` | เกณฑ์ checklist ที่สรุปจากครีเอทีฟที่ติด Top จริง |
+| `lib/creative-checklist.ts` | คำนวณ % ผ่าน checklist จากน้ำหนักของแต่ละข้อ |

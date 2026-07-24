@@ -18,3 +18,18 @@ test("state-changing auth requests require the exact same origin", () => {
   assert.equal(isSameOriginRequest("https://dashboard.example/login", "https://evil.example"), false);
   assert.equal(isSameOriginRequest("https://dashboard.example/login", null), false);
 });
+
+test("isSameOriginRequest accepts Host header match for proxy scenarios", () => {
+  assert.equal(
+    isSameOriginRequest("http://localhost:3000/api/auth/login", "http://127.0.0.1:60207", "127.0.0.1:60207"),
+    true
+  );
+  assert.equal(
+    isSameOriginRequest("http://localhost:3000/api/auth/login", "http://127.0.0.1:60207", "localhost:3000"),
+    false
+  );
+  assert.equal(
+    isSameOriginRequest("http://localhost:3000/api/auth/login", "http://evil.example", "127.0.0.1:60207"),
+    false
+  );
+});

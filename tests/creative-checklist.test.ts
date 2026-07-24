@@ -52,3 +52,29 @@ test("scoreChecklist returns 0 percent for an empty category list", () => {
   assert.equal(result.percent, 0);
   assert.equal(result.passed, false);
 });
+
+test("scoreChecklist excludes video-only items when reviewing a static image", () => {
+  const withVideoItem: Pick<ChecklistConfig, "categories" | "passThreshold"> = {
+    passThreshold: 80,
+    categories: [
+      {
+        id: "proof",
+        label: "Proof",
+        items: [
+          { id: "img-item", label: "Image item", weight: 1 },
+          { id: "video-item", label: "Video only item", weight: 1, appliesTo: "video" },
+        ],
+      },
+    ],
+  };
+
+  const imageResult = scoreChecklist(withVideoItem, ["img-item"], "image");
+  assert.equal(imageResult.totalWeight, 1);
+  assert.equal(imageResult.percent, 100);
+  assert.equal(imageResult.missingItems.length, 0);
+
+  const videoResult = scoreChecklist(withVideoItem, ["img-item"], "video");
+  assert.equal(videoResult.totalWeight, 2);
+  assert.equal(videoResult.missingItems.length, 1);
+  assert.equal(videoResult.missingItems[0].item.id, "video-item");
+});

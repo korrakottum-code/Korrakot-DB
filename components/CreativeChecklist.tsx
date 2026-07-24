@@ -1,18 +1,39 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, XCircle, ClipboardList, RefreshCw } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  XCircle,
+  ClipboardList,
+  RefreshCw,
+  UploadCloud,
+  Loader2,
+} from "lucide-react";
 import LogoutButton from "@/components/LogoutButton";
-import { scoreChecklist, type ChecklistConfig } from "@/lib/creative-checklist";
+import { scoreChecklist, type ChecklistConfig, type MediaType } from "@/lib/creative-checklist";
+
+interface AnalyzeReason {
+  id: string;
+  met: boolean;
+  reason: string;
+}
 
 export default function CreativeChecklist() {
   const [config, setConfig] = useState<ChecklistConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [checked, setChecked] = useState<Set<string>>(new Set());
-  const [creativeCode, setCreativeCode] = useState("");
-  const [reviewer, setReviewer] = useState("");
+  const [reasons, setReasons] = useState<Record<string, AnalyzeReason>>({});
+  const [mediaType, setMediaType] = useState<MediaType>("image");
+  const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string>("");
+  const [dragActive, setDragActive] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState("");
+  const [hasAnalyzed, setHasAnalyzed] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -35,6 +56,13 @@ export default function CreativeChecklist() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const toggleItem = (id: string) => {
     setChecked((prev) => {
       const next = new Set(prev);
@@ -43,16 +71,64 @@ export default function CreativeChecklist() {
     });
   };
 
-  const resetForm = () => {
+  const pickFile = (picked: File | null) => {
+    setAnalyzeError("");
+    setHasAnalyzed(false);
     setChecked(new Set());
-    setCreativeCode("");
-    setReviewer("");
+    setReasons({});
+    setFile(picked);
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return picked ? URL.createObjectURL(picked) : "";
+    });
+  };
+
+  const resetForm = () => {
+    pickFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const analyze = useCallback(async () => {
+    if (!file) return;
+    setAnalyzing(true);
+    setAnalyzeError("");
+    try {
+      const form = new FormData();
+      form.append("image", file);
+      form.append("mediaType", mediaType);
+      const res = await fetch("/api/creative-checklist/analyze", { method: "POST", body: form });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setChecked(new Set<string>(data.checkedIds || []));
+      setReasons((data.reasons || {}) as Record<string, AnalyzeReason>);
+      setHasAnalyzed(true);
+    } catch (e: unknown) {
+      setAnalyzeError(e instanceof Error ? e.message : "วิเคราะห์ภาพไม่สำเร็จ");
+    } finally {
+      setAnalyzing(false);
+    }
+  }, [file, mediaType]);
+
+  // Auto-analyze as soon as a file is selected — no manual ticking needed.
+  useEffect(() => {
+    if (file && !hasAnalyzed && !analyzing) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      analyze();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file]);
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragActive(false);
+    const dropped = e.dataTransfer.files?.[0];
+    if (dropped) pickFile(dropped);
   };
 
   const result = useMemo(() => {
     if (!config) return null;
-    return scoreChecklist(config, checked);
-  }, [config, checked]);
+    return scoreChecklist(config, checked, mediaType);
+  }, [config, checked, mediaType]);
 
   const handlePrint = () => window.print();
 
@@ -109,30 +185,89 @@ export default function CreativeChecklist() {
           {config.sourceNote}
         </div>
 
-        {/* Creative meta */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-          <div>
-            <label className="text-xs text-gray-500 mb-1 block">รหัสครีเอทีฟ (AW Code) เช่น PB03-0322</label>
-            <input
-              value={creativeCode}
-              onChange={(e) => setCreativeCode(e.target.value)}
-              placeholder="PB03-0322"
-              className="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 mb-1 block">ผู้ตรวจ</label>
-            <input
-              value={reviewer}
-              onChange={(e) => setReviewer(e.target.value)}
-              placeholder="ชื่อผู้ตรวจ"
-              className="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-            />
-          </div>
+        {/* Media type toggle */}
+        <div className="flex items-center gap-2 mb-3 print:hidden">
+          <span className="text-xs text-gray-500">ประเภทคอนเทนท์:</span>
+          <button
+            onClick={() => setMediaType("image")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              mediaType === "image" ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+            }`}
+          >
+            ภาพนิ่ง
+          </button>
+          <button
+            onClick={() => setMediaType("video")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              mediaType === "video" ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+            }`}
+            title="อัปโหลดเฟรมภาพตัวแทนจากวิดีโอ"
+          >
+            เฟรมจากวิดีโอ
+          </button>
         </div>
 
+        {/* Upload zone */}
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragActive(true);
+          }}
+          onDragLeave={() => setDragActive(false)}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+          className={`print:hidden mb-4 rounded-2xl border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${
+            dragActive ? "border-indigo-500 bg-indigo-950/30" : "border-gray-800 bg-gray-900 hover:border-gray-700"
+          }`}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={(e) => pickFile(e.target.files?.[0] || null)}
+          />
+          {previewUrl ? (
+            <div className="flex flex-col items-center gap-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={previewUrl} alt="ตัวอย่างคอนเทนท์" className="max-h-64 rounded-lg object-contain" />
+              <p className="text-xs text-gray-500">{file?.name}</p>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  resetForm();
+                }}
+                className="text-xs text-gray-400 hover:text-gray-200 underline"
+              >
+                เปลี่ยนภาพ
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2 text-gray-500">
+              <UploadCloud className="w-8 h-8" />
+              <p className="text-sm">ลากภาพมาวางที่นี่ หรือคลิกเพื่อเลือกไฟล์</p>
+              <p className="text-xs text-gray-600">รองรับ JPG, PNG, WEBP ขนาดไม่เกิน 8MB</p>
+            </div>
+          )}
+        </div>
+
+        {analyzing && (
+          <div className="flex items-center gap-2 justify-center text-sm text-indigo-300 mb-4 print:hidden">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            AI กำลังวิเคราะห์ภาพเทียบกับ checklist...
+          </div>
+        )}
+        {analyzeError && (
+          <div className="bg-red-950/40 border border-red-800/50 rounded-xl p-3 mb-4 text-sm text-red-300 print:hidden flex items-center justify-between gap-2">
+            <span>{analyzeError}</span>
+            <button onClick={analyze} className="text-xs underline flex-shrink-0">
+              ลองใหม่
+            </button>
+          </div>
+        )}
+
         {/* Score summary */}
-        {result && (
+        {result && hasAnalyzed && (
           <div
             className={`rounded-2xl p-4 mb-4 border ${
               result.passed ? "bg-emerald-950/40 border-emerald-700/50" : "bg-red-950/30 border-red-800/50"
@@ -177,30 +312,45 @@ export default function CreativeChecklist() {
         )}
 
         {/* Checklist categories */}
-        <div className="space-y-4">
-          {config.categories.map((category) => (
-            <div key={category.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
-              <h2 className="text-sm font-bold text-gray-200 mb-3">{category.label}</h2>
-              <div className="space-y-2">
-                {category.items.map((item) => (
-                  <label
-                    key={item.id}
-                    className="flex items-start gap-3 p-2 rounded-lg hover:bg-gray-800/50 cursor-pointer transition-colors"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked.has(item.id)}
-                      onChange={() => toggleItem(item.id)}
-                      className="mt-0.5 w-4 h-4 accent-indigo-500"
-                    />
-                    <span className="text-sm text-gray-300 flex-1">{item.label}</span>
-                    <span className="text-[10px] text-gray-600 flex-shrink-0">น้ำหนัก {item.weight}</span>
-                  </label>
-                ))}
+        {hasAnalyzed && (
+          <div className="space-y-4">
+            {config.categories.map((category) => (
+              <div key={category.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+                <h2 className="text-sm font-bold text-gray-200 mb-3">{category.label}</h2>
+                <div className="space-y-2">
+                  {category.items.map((item) => {
+                    const applicable = !item.appliesTo || item.appliesTo === "both" || item.appliesTo === mediaType;
+                    const reason = reasons[item.id]?.reason;
+                    return (
+                      <div
+                        key={item.id}
+                        className={`rounded-lg p-2 ${applicable ? "hover:bg-gray-800/50" : "opacity-40"}`}
+                      >
+                        <label className={`flex items-start gap-3 ${applicable ? "cursor-pointer" : "cursor-not-allowed"}`}>
+                          <input
+                            type="checkbox"
+                            checked={checked.has(item.id)}
+                            disabled={!applicable}
+                            onChange={() => toggleItem(item.id)}
+                            className="mt-0.5 w-4 h-4 accent-indigo-500"
+                          />
+                          <span className="text-sm text-gray-300 flex-1">{item.label}</span>
+                          <span className="text-[10px] text-gray-600 flex-shrink-0">น้ำหนัก {item.weight}</span>
+                        </label>
+                        {!applicable && (
+                          <p className="text-[11px] text-gray-600 ml-7 mt-0.5">ไม่นับคะแนนสำหรับสื่อประเภทนี้</p>
+                        )}
+                        {applicable && reason && (
+                          <p className="text-[11px] text-gray-500 ml-7 mt-0.5 italic">AI: {reason}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
 
         <div className="flex justify-end mt-4 print:hidden">
           <button

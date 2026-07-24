@@ -1,7 +1,10 @@
+export type MediaType = "image" | "video";
+
 export interface ChecklistItem {
   id: string;
   label: string;
   weight: number;
+  appliesTo?: MediaType | "both";
 }
 
 export interface ChecklistCategory {
@@ -26,9 +29,15 @@ export interface ChecklistScoreResult {
   missingItems: { categoryLabel: string; item: ChecklistItem }[];
 }
 
+function itemApplies(item: ChecklistItem, mediaType?: MediaType): boolean {
+  if (!mediaType || !item.appliesTo || item.appliesTo === "both") return true;
+  return item.appliesTo === mediaType;
+}
+
 export function scoreChecklist(
   config: Pick<ChecklistConfig, "categories" | "passThreshold">,
-  checkedIds: Set<string> | string[]
+  checkedIds: Set<string> | string[],
+  mediaType?: MediaType
 ): ChecklistScoreResult {
   const checked = checkedIds instanceof Set ? checkedIds : new Set(checkedIds);
   let totalWeight = 0;
@@ -37,6 +46,7 @@ export function scoreChecklist(
 
   for (const category of config.categories) {
     for (const item of category.items) {
+      if (!itemApplies(item, mediaType)) continue;
       totalWeight += item.weight;
       if (checked.has(item.id)) {
         checkedWeight += item.weight;

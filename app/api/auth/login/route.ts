@@ -24,7 +24,7 @@ function jsonError(error: string, status: number, headers?: HeadersInit) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isSameOriginRequest(request.url, request.headers.get("origin"))) {
+  if (!isSameOriginRequest(request.url, request.headers.get("origin"), request.headers.get("host"))) {
     return jsonError("คำขอไม่ถูกต้อง", 403);
   }
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {

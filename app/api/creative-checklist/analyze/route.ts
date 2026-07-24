@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
   const denied = requireInternalApiAuth(req);
   if (denied) return denied;
 
-  if (!isSameOriginRequest(req.url, req.headers.get("origin"))) {
+  if (!isSameOriginRequest(req.url, req.headers.get("origin"), req.headers.get("host"))) {
     return NextResponse.json({ error: "คำขอไม่ถูกต้อง" }, { status: 403 });
   }
 

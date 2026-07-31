@@ -1,0 +1,47 @@
+name: Weekly Creative Checklist Refresh
+
+on:
+  schedule:
+    # Every Monday 03:00 UTC = 10:00 Asia/Bangkok
+    - cron: "0 3 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh-checklist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run checklist refresh
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_ACCESS_TOKEN_2: ${{ secrets.META_ACCESS_TOKEN_2 }}
+          META_ACCESS_TOKEN_3: ${{ secrets.META_ACCESS_TOKEN_3 }}
+          CHECKLIST_PR_BODY_PATH: ${{ runner.temp }}/pr-body.md
+        run: npm run refresh-checklist
+
+      - name: Open Pull Request for review
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: weekly creative checklist refresh"
+          branch: chore/checklist-refresh
+          delete-branch: true
+          title: "chore: weekly creative checklist refresh"
+          body-path: ${{ runner.temp }}/pr-body.md
+          labels: automated,checklist
+          add-paths: data/creative-checklist.json

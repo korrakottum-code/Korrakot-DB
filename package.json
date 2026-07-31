@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "check": "npm test && npx tsc --noEmit",
-    "test": "node --experimental-strip-types --experimental-specifier-resolution=node --test tests/*.test.ts"
+    "test": "node --experimental-strip-types --experimental-specifier-resolution=node --test tests/*.test.ts",
+    "refresh-checklist": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/refresh-checklist.ts"
   },
   "dependencies": {
     "date-fns": "^4.3.0",

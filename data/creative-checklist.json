@@ -1,8 +1,8 @@
 {
-  "version": "2026-07-27.v1",
+  "version": "2026-07-27.v2",
   "lastUpdated": "2026-07-27",
   "passThreshold": 50,
-  "sourceNote": "สรุปจาก Top 40 ครีเอทีฟ (CPI ต่ำสุดที่มีข้อมูลเชื่อถือได้) ในช่วง 2026-07-01 ถึง 2026-07-31 (32 static image, 8 วิดีโอ). คะแนนเฉลี่ยของ Top ads = 61.1%, ต่ำสุด = 0%. passThreshold ปรับเป็น 50% โดยอิงจาก percentile 20 ของคะแนนจริงกลุ่มนี้ (แทนค่าคงที่เดิม) เพื่อให้ Top ads ส่วนใหญ่ผ่านเกณฑ์จริง. ⚠️ ข้อที่ Top ads ทำตามน้อย (<30%) ควรทบทวนน้ำหนัก/ความจำเป็น: tech-hook3s (0%), cta-benefits (13.2%), hook-pain (25%), proof-testimonial (25%), proof-beforeafter (27.5%). อัปเดตอัตโนมัติทุกสัปดาห์ผ่าน GitHub Actions (scripts/refresh-checklist.ts) — merge ผ่าน Pull Request หลังรีวิว.",
+  "sourceNote": "สรุปจาก Top 40 ครีเอทีฟ (CPI ต่ำสุดที่มีข้อมูลเชื่อถือได้) ในช่วง 2026-07-01 ถึง 2026-07-31 (31 static image, 9 วิดีโอ). คะแนนเฉลี่ยของ Top ads = 63.5%, ต่ำสุด = 12.5%. passThreshold ปรับเป็น 50% โดยอิงจาก percentile 20 ของคะแนนจริงกลุ่มนี้ (แทนค่าคงที่เดิม) เพื่อให้ Top ads ส่วนใหญ่ผ่านเกณฑ์จริง. ⚠️ ข้อที่ Top ads ทำตามน้อย (<30%) ควรทบทวนน้ำหนัก/ความจำเป็น: cta-benefits (18.9%), tech-hook3s (22.2%). อัปเดตอัตโนมัติทุกสัปดาห์ผ่าน GitHub Actions (scripts/refresh-checklist.ts) — merge ผ่าน Pull Request หลังรีวิว.",
   "categories": [
     {
       "id": "hook",
@@ -32,7 +32,7 @@
         {
           "id": "proof-beforeafter",
           "label": "มีภาพ Before/After หรือ zoom-in จุดปัญหาให้เห็นผลลัพธ์ชัดเจน",
-          "weight": 2
+          "weight": 1
         },
         {
           "id": "proof-product",
@@ -64,7 +64,7 @@
         {
           "id": "offer-match",
           "label": "ข้อเสนอตรงกับโปรแกรม/แคมเปญ/สาขาที่กำลังโปรโมทจริง",
-          "weight": 2
+          "weight": 1
         }
       ]
     },
@@ -75,17 +75,17 @@
         {
           "id": "brand-logo",
           "label": "โลโก้ Class Clinic อยู่ตำแหน่งเดิมทุกครั้ง (มุมบน) และมองเห็นชัด",
-          "weight": 1
+          "weight": 2
         },
         {
           "id": "brand-tone",
           "label": "โทนสีตรงกับ brand guideline (เขียว/ทอง/ขาว-ดำ หรือแดง-เหลืองตามแคมเปญ)",
-          "weight": 1
+          "weight": 2
         },
         {
           "id": "brand-contrast",
           "label": "ตัวอักษรมี contrast ชัดกับพื้นหลัง อ่านง่ายบนพื้น feed",
-          "weight": 1
+          "weight": 2
         }
       ]
     },
@@ -96,7 +96,7 @@
         {
           "id": "cta-clear",
           "label": "มี CTA ชัดเจน เช่น INBOX, จองด่วน, ทักแชท",
-          "weight": 2
+          "weight": 1
         },
         {
           "id": "cta-benefits",
@@ -117,12 +117,12 @@
         {
           "id": "tech-ratio",
           "label": "อัตราส่วนภาพเหมาะกับ Feed/Story ที่จะใช้ (1:1, 4:5 หรือ 9:16)",
-          "weight": 1
+          "weight": 2
         },
         {
           "id": "tech-notcut",
           "label": "ข้อความ/โลโก้ไม่ถูกบังหรือตัดขอบเมื่อแสดงบนมือถือ",
-          "weight": 1
+          "weight": 2
         },
         {
           "id": "tech-hook3s",

@@ -96,7 +96,30 @@ Session Login มีอายุ 12 ชั่วโมง ผู้ใช้ส�
 
 **ใช้งานแบบไม่ต้องติกเอง**: ลากภาพคอนเทนท์วางในหน้า (หรืออัปโหลดเฟรมตัวแทนจากวิดีโอ) ระบบจะส่งภาพให้ OpenAI GPT-4o Vision วิเคราะห์เทียบกับ checklist ปัจจุบันให้อัตโนมัติ แล้วติ๊กผลลัพธ์ + คำนวณ % ให้เอง (ยังแก้ผลด้วยมือได้ถ้า AI ตัดสินผิด) ต้องตั้งค่า `OPENAI_API_KEY` ใน `.env.local` ก่อนใช้งาน ดู [`.env.example`](./.env.example)
 
-**วิธีวิเคราะห์และรีเฟรช checklist ใหม่ (แนะนำทุก 1-2 สัปดาห์):**
+### รีเฟรช checklist อัตโนมัติทุกสัปดาห์ (GitHub Actions)
+
+`.github/workflows/checklist-refresh.yml` รันทุกวันจันทร์ 10:00 (Asia/Bangkok) โดย `scripts/refresh-checklist.ts` จะ:
+
+1. ดึงแอดที่ CPI ต่ำสุดและมีข้อมูลเชื่อถือได้ (Spend > 0, Inbox ≥ 5) ในช่วง 30 วันล่าสุด — เป็น "Top ads" ของสัปดาห์นั้น
+2. ส่งภาพ/thumbnail ของ Top ads แต่ละอันให้ OpenAI GPT-4o Vision ให้คะแนนเทียบกับ checklist **ปัจจุบัน**
+3. คำนวณ `passThreshold` ใหม่จาก percentile ของคะแนนจริงที่ Top ads ทำได้ (ไม่ใช่เลขคงที่ 80% เดิม) — แก้ปัญหาที่ Top ads บางตัวได้คะแนนแค่ ~60% แต่ยังติด Top จริง เพราะ threshold เดิมเข้มเกินสภาพจริง
+4. หาข้อใน checklist ที่ Top ads "ทำตามน้อย" (pass rate < 30%) แล้วใส่คำเตือนไว้ใน `sourceNote` ให้คนรีวิว (ไม่ลบอัตโนมัติ)
+5. เขียนไฟล์ `data/creative-checklist.json` ใหม่ แล้วเปิด **Pull Request** ให้รีวิวก่อน Merge เข้า `main` เสมอ (ไม่มีการ commit ตรง `main` หรือเขียนทับ production runtime เพราะ Vercel filesystem เป็น read-only)
+
+ต้องตั้งค่า GitHub Actions Secrets ต่อไปนี้ในหน้า Settings → Secrets and variables → Actions ของ repo:
+
+| Secret | คำอธิบาย |
+| --- | --- |
+| `OPENAI_API_KEY` | สำหรับเรียก GPT-4o Vision ให้คะแนนภาพ |
+| `META_ACCESS_TOKEN`, `META_ACCESS_TOKEN_2`, `META_ACCESS_TOKEN_3` | Token เดียวกับที่ใช้ใน Vercel สำหรับดึง insights จาก Meta API |
+
+รันด้วยมือได้ทันทีผ่านแท็บ **Actions → Weekly Creative Checklist Refresh → Run workflow** หรือรันในเครื่องด้วย:
+
+```bash
+OPENAI_API_KEY=... META_ACCESS_TOKEN=... npm run refresh-checklist
+```
+
+### รีเฟรชด้วยมือ (ทางเลือกเสริม)
 
 1. เปิดหน้า `/ads` แล้วดู Creative Grid เรียงตาม Inbox/CPI เพื่อหาแอดที่ "ติด Top" ล่าสุด (Spend > 0, จำนวนผลลัพธ์ ≥ 5, CPI อยู่ในเป้าหมาย)
 2. ดูภาพ/วิดีโอของแอดกลุ่มนั้นร่วมกันเป็นชุด สรุปว่ามีอะไรที่ซ้ำกัน เช่น พาดหัว, ราคา, หลักฐาน (before/after), branding, CTA
@@ -150,3 +173,7 @@ Creative บางรายการอาจไม่มี thumbnail หรื
 | `app/creative-review/page.tsx` | หน้า Checklist ตรวจคอนเทนท์ก่อนขึ้นแอด |
 | `data/creative-checklist.json` | เกณฑ์ checklist ที่สรุปจากครีเอทีฟที่ติด Top จริง |
 | `lib/creative-checklist.ts` | คำนวณ % ผ่าน checklist จากน้ำหนักของแต่ละข้อ |
+| `lib/creative-checklist-ai.ts` | Prompt/JSON schema และการเรียก OpenAI Vision ให้คะแนนภาพ (ใช้ร่วมกันทั้ง `/api/creative-checklist/analyze` และ `scripts/refresh-checklist.ts`) |
+| `lib/creative-checklist-stats.ts` | คำนวณ percentile-based `passThreshold` และ pass rate ของแต่ละข้อจากคะแนนจริงของ Top ads |
+| `lib/creative-assets.ts` | ดึง thumbnail/creative asset จาก Meta API (ใช้ร่วมกันทั้ง `/api/creative` และ `scripts/refresh-checklist.ts`) |
+| `scripts/refresh-checklist.ts` | สคริปต์รีเฟรช checklist อัตโนมัติทุกสัปดาห์ (รันโดย `.github/workflows/checklist-refresh.yml`) |

@@ -151,6 +151,7 @@ async function main() {
       (item) => !item.appliesTo || item.appliesTo === "both" || item.appliesTo === mediaType
     );
 
+    console.log(`  Scoring ${creative.groupKey} url=${asset.thumbnailUrl.slice(0, 80)}...`);
     try {
       const aiResults = await scoreImageAgainstChecklist(apiKey, asset.thumbnailUrl, relevantItems, mediaType);
       const checkedIds = aiResults.filter((r) => r.met).map((r) => r.id);
@@ -162,8 +163,9 @@ async function main() {
       console.log(`  ${creative.groupKey}: ${score.percent}% (${mediaType}, CPI ฿${creative.cpi.toFixed(0)})`);
     } catch (err) {
       failedCount += 1;
+      const detail = err instanceof ChecklistAiError ? ` | detail: ${err.detail ?? "-"}` : "";
       const message = err instanceof ChecklistAiError ? err.message : (err instanceof Error ? err.message : "unknown error");
-      console.warn(`  [skip] ${creative.groupKey}: ${message}`);
+      console.warn(`  [skip] ${creative.groupKey}: ${message}${detail}`);
     }
   }
 

@@ -1,61 +1,135 @@
 {
-  "version": "2026-07-25.v1",
-  "lastUpdated": "2026-07-25",
-  "passThreshold": 80,
-  "sourceNote": "สรุปจาก Top 59 ครีเอทีฟที่ CPI < ฿100 และ Inbox สูงสุด ในช่วง 2025-07-21 ถึง 2026-07-24 (46 static image, 17 วิดีโอ) ควรวิเคราะห์ Top creative ซ้ำทุก 1-2 สัปดาห์ผ่านหน้า /ads > Creative Grid แล้วอัปเดตไฟล์นี้ผ่าน Pull Request",
+  "version": "2026-07-27.v1",
+  "lastUpdated": "2026-07-27",
+  "passThreshold": 50,
+  "sourceNote": "สรุปจาก Top 40 ครีเอทีฟ (CPI ต่ำสุดที่มีข้อมูลเชื่อถือได้) ในช่วง 2026-07-01 ถึง 2026-07-31 (31 static image, 9 วิดีโอ). คะแนนเฉลี่ยของ Top ads = 62.6%, ต่ำสุด = 0%. passThreshold ปรับเป็น 50% โดยอิงจาก percentile 20 ของคะแนนจริงกลุ่มนี้ (แทนค่าคงที่เดิม) เพื่อให้ Top ads ส่วนใหญ่ผ่านเกณฑ์จริง. ⚠️ ข้อที่ Top ads ทำตามน้อย (<30%) ควรทบทวนน้ำหนัก/ความจำเป็น: proof-testimonial (14.3%), cta-benefits (15.8%). อัปเดตอัตโนมัติทุกสัปดาห์ผ่าน GitHub Actions (scripts/refresh-checklist.ts) — merge ผ่าน Pull Request หลังรีวิว.",
   "categories": [
     {
       "id": "hook",
       "label": "Hook / พาดหัว",
       "items": [
-        { "id": "hook-readable", "label": "พาดหัวตัวใหญ่ อ่านออกภายใน 1 วินาที แม้ปิดเสียงหรือเลื่อนผ่านเร็ว", "weight": 2 },
-        { "id": "hook-price", "label": "มีตัวเลขราคา/ส่วนลดเด่นเป็นจุดสะดุดตาแรก (เช่น 990./111.-)", "weight": 2 },
-        { "id": "hook-pain", "label": "มี pain point หรือคำกระตุ้นที่ตรงกลุ่มเป้าหมาย (เช่น 'เตือน!', คำถามที่เจ็บจี๊ด)", "weight": 1 }
+        {
+          "id": "hook-readable",
+          "label": "พาดหัวตัวใหญ่ อ่านออกภายใน 1 วินาที แม้ปิดเสียงหรือเลื่อนผ่านเร็ว",
+          "weight": 2
+        },
+        {
+          "id": "hook-price",
+          "label": "มีตัวเลขราคา/ส่วนลดเด่นเป็นจุดสะดุดตาแรก (เช่น 990./111.-)",
+          "weight": 2
+        },
+        {
+          "id": "hook-pain",
+          "label": "มี pain point หรือคำกระตุ้นที่ตรงกลุ่มเป้าหมาย (เช่น 'เตือน!', คำถามที่เจ็บจี๊ด)",
+          "weight": 1
+        }
       ]
     },
     {
       "id": "proof",
       "label": "หลักฐาน / ความน่าเชื่อถือ",
       "items": [
-        { "id": "proof-beforeafter", "label": "มีภาพ Before/After หรือ zoom-in จุดปัญหาให้เห็นผลลัพธ์ชัดเจน", "weight": 2 },
-        { "id": "proof-product", "label": "มีสินค้า/ขวดยา/เครื่องมือจริงในภาพ เพื่อสร้างความเป็นรูปธรรม", "weight": 1 },
-        { "id": "proof-testimonial", "label": "(กรณีวิดีโอ) มีคนพูดหรือเคสจริงเล่าปัญหา/ผลลัพธ์ ไม่ใช่แค่ภาพนิ่งบรรยาย", "weight": 1, "appliesTo": "video" }
+        {
+          "id": "proof-beforeafter",
+          "label": "มีภาพ Before/After หรือ zoom-in จุดปัญหาให้เห็นผลลัพธ์ชัดเจน",
+          "weight": 2
+        },
+        {
+          "id": "proof-product",
+          "label": "มีสินค้า/ขวดยา/เครื่องมือจริงในภาพ เพื่อสร้างความเป็นรูปธรรม",
+          "weight": 1
+        },
+        {
+          "id": "proof-testimonial",
+          "label": "(กรณีวิดีโอ) มีคนพูดหรือเคสจริงเล่าปัญหา/ผลลัพธ์ ไม่ใช่แค่ภาพนิ่งบรรยาย",
+          "weight": 1,
+          "appliesTo": "video"
+        }
       ]
     },
     {
       "id": "offer",
       "label": "ข้อเสนอ / ราคา",
       "items": [
-        { "id": "offer-clear", "label": "ราคาชัดเจน ตัวใหญ่ อ่านง่าย มีหน่วยบาท", "weight": 2 },
-        { "id": "offer-anchor", "label": "มีตัวช่วยกระตุ้นตัดสินใจ เช่น ราคาก่อนขีดฆ่า, แถมฟรี, จำกัดสิทธิ", "weight": 1 },
-        { "id": "offer-match", "label": "ข้อเสนอตรงกับโปรแกรม/แคมเปญ/สาขาที่กำลังโปรโมทจริง", "weight": 2 }
+        {
+          "id": "offer-clear",
+          "label": "ราคาชัดเจน ตัวใหญ่ อ่านง่าย มีหน่วยบาท",
+          "weight": 2
+        },
+        {
+          "id": "offer-anchor",
+          "label": "มีตัวช่วยกระตุ้นตัดสินใจ เช่น ราคาก่อนขีดฆ่า, แถมฟรี, จำกัดสิทธิ",
+          "weight": 1
+        },
+        {
+          "id": "offer-match",
+          "label": "ข้อเสนอตรงกับโปรแกรม/แคมเปญ/สาขาที่กำลังโปรโมทจริง",
+          "weight": 2
+        }
       ]
     },
     {
       "id": "branding",
       "label": "Branding",
       "items": [
-        { "id": "brand-logo", "label": "โลโก้ Class Clinic อยู่ตำแหน่งเดิมทุกครั้ง (มุมบน) และมองเห็นชัด", "weight": 1 },
-        { "id": "brand-tone", "label": "โทนสีตรงกับ brand guideline (เขียว/ทอง/ขาว-ดำ หรือแดง-เหลืองตามแคมเปญ)", "weight": 1 },
-        { "id": "brand-contrast", "label": "ตัวอักษรมี contrast ชัดกับพื้นหลัง อ่านง่ายบนพื้น feed", "weight": 1 }
+        {
+          "id": "brand-logo",
+          "label": "โลโก้ Class Clinic อยู่ตำแหน่งเดิมทุกครั้ง (มุมบน) และมองเห็นชัด",
+          "weight": 1
+        },
+        {
+          "id": "brand-tone",
+          "label": "โทนสีตรงกับ brand guideline (เขียว/ทอง/ขาว-ดำ หรือแดง-เหลืองตามแคมเปญ)",
+          "weight": 1
+        },
+        {
+          "id": "brand-contrast",
+          "label": "ตัวอักษรมี contrast ชัดกับพื้นหลัง อ่านง่ายบนพื้น feed",
+          "weight": 1
+        }
       ]
     },
     {
       "id": "cta",
       "label": "CTA & Urgency",
       "items": [
-        { "id": "cta-clear", "label": "มี CTA ชัดเจน เช่น INBOX, จองด่วน, ทักแชท", "weight": 2 },
-        { "id": "cta-benefits", "label": "มี bullet ประโยชน์แบบ ✅ ไม่เกิน 3-5 ข้อ กระชับ อ่านง่าย", "weight": 1 },
-        { "id": "cta-urgency", "label": "มีความเร่งด่วน/จำกัดสิทธิ ถ้าเหมาะกับแคมเปญนี้", "weight": 1 }
+        {
+          "id": "cta-clear",
+          "label": "มี CTA ชัดเจน เช่น INBOX, จองด่วน, ทักแชท",
+          "weight": 2
+        },
+        {
+          "id": "cta-benefits",
+          "label": "มี bullet ประโยชน์แบบ ✅ ไม่เกิน 3-5 ข้อ กระชับ อ่านง่าย",
+          "weight": 1
+        },
+        {
+          "id": "cta-urgency",
+          "label": "มีความเร่งด่วน/จำกัดสิทธิ ถ้าเหมาะกับแคมเปญนี้",
+          "weight": 1
+        }
       ]
     },
     {
       "id": "technical",
       "label": "Technical / ความพร้อมลงแอด",
       "items": [
-        { "id": "tech-ratio", "label": "อัตราส่วนภาพเหมาะกับ Feed/Story ที่จะใช้ (1:1, 4:5 หรือ 9:16)", "weight": 1 },
-        { "id": "tech-notcut", "label": "ข้อความ/โลโก้ไม่ถูกบังหรือตัดขอบเมื่อแสดงบนมือถือ", "weight": 1 },
-        { "id": "tech-hook3s", "label": "(กรณีวิดีโอ) 3 วินาทีแรกมี hook หรือความเคลื่อนไหวที่ดึงความสนใจ", "weight": 1, "appliesTo": "video" }
+        {
+          "id": "tech-ratio",
+          "label": "อัตราส่วนภาพเหมาะกับ Feed/Story ที่จะใช้ (1:1, 4:5 หรือ 9:16)",
+          "weight": 1
+        },
+        {
+          "id": "tech-notcut",
+          "label": "ข้อความ/โลโก้ไม่ถูกบังหรือตัดขอบเมื่อแสดงบนมือถือ",
+          "weight": 1
+        },
+        {
+          "id": "tech-hook3s",
+          "label": "(กรณีวิดีโอ) 3 วินาทีแรกมี hook หรือความเคลื่อนไหวที่ดึงความสนใจ",
+          "weight": 1,
+          "appliesTo": "video"
+        }
       ]
     }
   ]

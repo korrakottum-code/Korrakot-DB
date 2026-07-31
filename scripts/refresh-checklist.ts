@@ -20,14 +20,14 @@
  */
 import fs from "fs";
 import path from "path";
-import { fetchAllInsights, type AdInsight } from "../lib/meta.js";
-import { fetchCreativeAssets, buildTokenByAccount } from "../lib/creative-assets.js";
-import { hasReliableCost } from "../lib/metrics.js";
-import { readChecklistConfig } from "../lib/creative-checklist-store.js";
-import type { ChecklistConfig, MediaType } from "../lib/creative-checklist.js";
-import { scoreChecklist } from "../lib/creative-checklist.js";
-import { scoreImageAgainstChecklist, ChecklistAiError } from "../lib/creative-checklist-ai.js";
-import { computeDataDrivenThreshold, computeItemPassRates, findWeakItems } from "../lib/creative-checklist-stats.js";
+import { fetchAllInsights, type AdInsight } from "../lib/meta";
+import { fetchCreativeAssets, buildTokenByAccount } from "../lib/creative-assets";
+import { hasReliableCost } from "../lib/metrics";
+import { readChecklistConfig } from "../lib/creative-checklist-store";
+import type { ChecklistConfig, MediaType } from "../lib/creative-checklist";
+import { scoreChecklist } from "../lib/creative-checklist";
+import { scoreImageAgainstChecklist, ChecklistAiError } from "../lib/creative-checklist-ai";
+import { computeDataDrivenThreshold, computeItemPassRates, findWeakItems } from "../lib/creative-checklist-stats";
 
 const CONFIG_PATH = path.join(process.cwd(), "data", "creative-checklist.json");
 const TOP_N = Number(process.env.CHECKLIST_TOP_N || 40);

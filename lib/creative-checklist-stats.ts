@@ -69,3 +69,24 @@ export function computeItemPassRates(perAdResults: { id: string; met: boolean }[
 export function findWeakItems(passRates: ItemPassRate[], belowRate = 30, minSampleSize = 5): ItemPassRate[] {
   return passRates.filter((item) => item.total >= minSampleSize && item.rate < belowRate);
 }
+
+/**
+ * Returns a map of item id → new weight based on pass rates:
+ * - rate < 30%  → weight 1 (low signal, reduce importance)
+ * - rate 30-69% → weight 1 (neutral)
+ * - rate ≥ 70%  → weight 2 (strong signal, increase importance)
+ * Only items with enough samples (>= minSampleSize) are adjusted.
+ */
+export function computeWeightUpdates(
+  passRates: ItemPassRate[],
+  minSampleSize = 5
+): Map<string, number> {
+  const updates = new Map<string, number>();
+  for (const item of passRates) {
+    if (item.total < minSampleSize) continue;
+    if (item.rate < 30) updates.set(item.id, 1);
+    else if (item.rate >= 70) updates.set(item.id, 2);
+    else updates.set(item.id, 1);
+  }
+  return updates;
+}

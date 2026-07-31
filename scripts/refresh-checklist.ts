@@ -27,7 +27,7 @@ import { readChecklistConfig } from "../lib/creative-checklist-store";
 import type { ChecklistConfig, MediaType } from "../lib/creative-checklist";
 import { scoreChecklist } from "../lib/creative-checklist";
 import { scoreImageAgainstChecklist, ChecklistAiError } from "../lib/creative-checklist-ai";
-import { computeDataDrivenThreshold, computeItemPassRates, findWeakItems } from "../lib/creative-checklist-stats";
+import { computeDataDrivenThreshold, computeItemPassRates, findWeakItems, computeWeightUpdates } from "../lib/creative-checklist-stats";
 
 const CONFIG_PATH = path.join(process.cwd(), "data", "creative-checklist.json");
 const TOP_N = Number(process.env.CHECKLIST_TOP_N || 40);
@@ -177,6 +177,7 @@ async function main() {
   const newThreshold = computeDataDrivenThreshold(perAdScores, { percentileRank: 20, min: 50, max: 85, step: 5 });
   const itemPassRates = computeItemPassRates(perAdItemResults);
   const weakItems = findWeakItems(itemPassRates, 30, 5);
+  const weightUpdates = computeWeightUpdates(itemPassRates, 5);
   const avgScore = Math.round((perAdScores.reduce((a, b) => a + b, 0) / perAdScores.length) * 10) / 10;
   const minScore = Math.min(...perAdScores);
 
@@ -188,11 +189,20 @@ async function main() {
     ? ` ⚠️ ข้อที่ Top ads ทำตามน้อย (<30%) ควรทบทวนน้ำหนัก/ความจำเป็น: ${weakItems.map((w) => `${w.id} (${w.rate}%)`).join(", ")}.`
     : "";
 
+  const updatedCategories = config.categories.map((cat) => ({
+    ...cat,
+    items: cat.items.map((item) => ({
+      ...item,
+      weight: weightUpdates.has(item.id) ? weightUpdates.get(item.id)! : item.weight,
+    })),
+  }));
+
   const updatedConfig: ChecklistConfig = {
     ...config,
     version: nextVersion,
     lastUpdated: todayMonday,
     passThreshold: newThreshold,
+    categories: updatedCategories,
     sourceNote:
       `สรุปจาก Top ${perAdScores.length} ครีเอทีฟ (CPI ต่ำสุดที่มีข้อมูลเชื่อถือได้) ในช่วง ${since} ถึง ${until} ` +
       `(${imageCount} static image, ${videoCount} วิดีโอ${failedCount ? `, ${failedCount} รายการข้ามเพราะดึงรูป/วิเคราะห์ไม่สำเร็จ` : ""}). ` +

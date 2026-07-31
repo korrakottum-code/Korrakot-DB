@@ -34,14 +34,11 @@ jobs:
           CHECKLIST_PR_BODY_PATH: ${{ runner.temp }}/pr-body.md
         run: npm run refresh-checklist
 
-      - name: Open Pull Request for review
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore: weekly creative checklist refresh"
-          branch: chore/checklist-refresh
-          delete-branch: true
-          title: "chore: weekly creative checklist refresh"
-          body-path: ${{ runner.temp }}/pr-body.md
-          labels: automated,checklist
-          add-paths: data/creative-checklist.json
+      - name: Commit updated checklist to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/creative-checklist.json
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "chore: weekly creative checklist refresh [skip ci]"
+          git push origin main

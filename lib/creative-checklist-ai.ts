@@ -58,12 +58,32 @@ export class ChecklistAiError extends Error {
   }
 }
 
+async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; mimeType: string }> {
+  let res: Response;
+  try {
+    res = await fetch(imageUrl);
+  } catch (err) {
+    throw new ChecklistAiError("ดาวน์โหลดรูปภาพไม่สำเร็จ", undefined, err instanceof Error ? err.message : undefined);
+  }
+  if (!res.ok) {
+    throw new ChecklistAiError(`ดาวน์โหลดรูปภาพล้มเหลว (${res.status})`, res.status);
+  }
+  const contentType = res.headers.get("content-type") || "image/jpeg";
+  const mimeType = contentType.split(";")[0].trim();
+  const buffer = await res.arrayBuffer();
+  const base64 = Buffer.from(buffer).toString("base64");
+  return { base64, mimeType };
+}
+
 export async function scoreImageAgainstChecklist(
   apiKey: string,
   imageUrl: string,
   items: ChecklistItem[],
   mediaType: MediaType
 ): Promise<AiItemResult[]> {
+  const { base64, mimeType } = await fetchImageAsBase64(imageUrl);
+  const dataUri = `data:${mimeType};base64,${base64}`;
+
   let aiResponse: Response;
   try {
     aiResponse = await fetch(OPENAI_API_URL, {
@@ -84,7 +104,7 @@ export async function scoreImageAgainstChecklist(
             role: "user",
             content: [
               { type: "text", text: buildChecklistPrompt(items, mediaType) },
-              { type: "image_url", image_url: { url: imageUrl } },
+              { type: "image_url", image_url: { url: dataUri } },
             ],
           },
         ],

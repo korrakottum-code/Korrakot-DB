@@ -2,20 +2,19 @@ import { parseAdName, ParsedAdName } from "./parser";
 import { fetchGraphPages } from "./pagination";
 import { META_GRAPH_API_BASE } from "./meta-version";
 
-/** Run async tasks in batches of `size` with `delayMs` between batches to avoid rate limits. */
-async function batchSettled<T>(
-  tasks: (() => Promise<T>)[],
-  size = 3,
-  delayMs = 500
-): Promise<PromiseSettledResult<T>[]> {
-  const results: PromiseSettledResult<T>[] = [];
-  for (let i = 0; i < tasks.length; i += size) {
-    const batch = tasks.slice(i, i + size);
-    const batchResults = await Promise.allSettled(batch.map((fn) => fn()));
-    results.push(...batchResults);
-    if (i + size < tasks.length) await new Promise((r) => setTimeout(r, delayMs));
+
+/** Retry once after a delay when Meta returns a rate-limit error. Fast path is unchanged. */
+async function withRateLimitRetry<T>(fn: () => Promise<T>, retries = 1, delayMs = 3000): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message.toLowerCase() : "";
+    if (retries > 0 && (msg.includes("request limit") || msg.includes("rate limit"))) {
+      await new Promise((r) => setTimeout(r, delayMs));
+      return withRateLimitRetry(fn, retries - 1, delayMs * 2);
+    }
+    throw err;
   }
-  return results;
 }
 
 const META_API_BASE = META_GRAPH_API_BASE;
@@ -159,9 +158,9 @@ export async function fetchAllInsights(
     };
   }
 
-  const results = await batchSettled(
-    accounts.map((acc) => () =>
-      fetchInsightsForAccount(acc.id, acc.name, token, datePreset, since, until)
+  const results = await Promise.allSettled(
+    accounts.map((acc) =>
+      withRateLimitRetry(() => fetchInsightsForAccount(acc.id, acc.name, token, datePreset, since, until))
     )
   );
 
@@ -318,8 +317,9 @@ export async function fetchAllCampaignMetadata(
     };
   }
 
-  const results = await batchSettled(
-    accounts.map((acc) => async () => {
+  const results = await Promise.allSettled(
+    accounts.map((acc) =>
+      withRateLimitRetry(async () => {
       const [budgets, adSetGoals] = await Promise.all([fetchCampaignBudgets(acc.id, token), fetchAdSetOptimizationGoals(acc.id, token)]);
       const campaigns = budgets.map((budget): CampaignRow => ({
         accountId: acc.id,
@@ -339,6 +339,7 @@ export async function fetchAllCampaignMetadata(
       }));
       return { campaigns, adSetGoals };
     })
+  )
   );
 
   const campaigns: CampaignRow[] = [];
@@ -378,8 +379,9 @@ export async function fetchAllCampaignData(
     };
   }
 
-  const results = await batchSettled(
-    accounts.map((acc) => async () => {
+  const results = await Promise.allSettled(
+    accounts.map((acc) =>
+      withRateLimitRetry(async () => {
       const [insightsRaw, budgetsRaw] = await Promise.all([
         fetchCampaignInsights(acc.id, token, datePreset, since, until),
         fetchCampaignBudgets(acc.id, token),
@@ -426,6 +428,7 @@ export async function fetchAllCampaignData(
         };
       });
     })
+  )
   );
 
   const campaigns: CampaignRow[] = [];

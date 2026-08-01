@@ -2,6 +2,22 @@ import { parseAdName, ParsedAdName } from "./parser";
 import { fetchGraphPages } from "./pagination";
 import { META_GRAPH_API_BASE } from "./meta-version";
 
+/** Run async tasks in batches of `size` with `delayMs` between batches to avoid rate limits. */
+async function batchSettled<T>(
+  tasks: (() => Promise<T>)[],
+  size = 3,
+  delayMs = 500
+): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = [];
+  for (let i = 0; i < tasks.length; i += size) {
+    const batch = tasks.slice(i, i + size);
+    const batchResults = await Promise.allSettled(batch.map((fn) => fn()));
+    results.push(...batchResults);
+    if (i + size < tasks.length) await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return results;
+}
+
 const META_API_BASE = META_GRAPH_API_BASE;
 
 export interface AdInsight {
@@ -143,8 +159,8 @@ export async function fetchAllInsights(
     };
   }
 
-  const results = await Promise.allSettled(
-    accounts.map((acc) =>
+  const results = await batchSettled(
+    accounts.map((acc) => () =>
       fetchInsightsForAccount(acc.id, acc.name, token, datePreset, since, until)
     )
   );
@@ -302,8 +318,8 @@ export async function fetchAllCampaignMetadata(
     };
   }
 
-  const results = await Promise.allSettled(
-    accounts.map(async (acc) => {
+  const results = await batchSettled(
+    accounts.map((acc) => async () => {
       const [budgets, adSetGoals] = await Promise.all([fetchCampaignBudgets(acc.id, token), fetchAdSetOptimizationGoals(acc.id, token)]);
       const campaigns = budgets.map((budget): CampaignRow => ({
         accountId: acc.id,
@@ -362,8 +378,8 @@ export async function fetchAllCampaignData(
     };
   }
 
-  const results = await Promise.allSettled(
-    accounts.map(async (acc) => {
+  const results = await batchSettled(
+    accounts.map((acc) => async () => {
       const [insightsRaw, budgetsRaw] = await Promise.all([
         fetchCampaignInsights(acc.id, token, datePreset, since, until),
         fetchCampaignBudgets(acc.id, token),

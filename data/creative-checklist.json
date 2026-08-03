@@ -1,8 +1,8 @@
 {
-  "version": "2026-07-27.v1",
-  "lastUpdated": "2026-07-27",
+  "version": "2026-08-03.v1",
+  "lastUpdated": "2026-08-03",
   "passThreshold": 50,
-  "sourceNote": "สรุปจาก Top 39 ครีเอทีฟ (CPI ต่ำสุดที่มีข้อมูลเชื่อถือได้) ในช่วง 2026-07-01 ถึง 2026-07-31 (30 static image, 9 วิดีโอ, 1 รายการข้ามเพราะดึงรูป/วิเคราะห์ไม่สำเร็จ). คะแนนเฉลี่ยของ Top ads = 68.5%, ต่ำสุด = 11.5%. passThreshold ปรับเป็น 50% โดยอิงจาก percentile 20 ของคะแนนจริงกลุ่มนี้ (แทนค่าคงที่เดิม) เพื่อให้ Top ads ส่วนใหญ่ผ่านเกณฑ์จริง. ⚠️ ข้อที่ Top ads ทำตามน้อย (<30%) ควรทบทวนน้ำหนัก/ความจำเป็น: proof-testimonial (11.1%), tech-hook3s (12.5%), cta-benefits (16.7%). อัปเดตอัตโนมัติทุกสัปดาห์ผ่าน GitHub Actions (scripts/refresh-checklist.ts) — merge ผ่าน Pull Request หลังรีวิว.",
+  "sourceNote": "สรุปจาก Top 40 ครีเอทีฟ (CPI ต่ำสุดที่มีข้อมูลเชื่อถือได้) ในช่วง 2026-07-04 ถึง 2026-08-03 (32 static image, 8 วิดีโอ). คะแนนเฉลี่ยของ Top ads = 68.9%, ต่ำสุด = 20%. passThreshold ปรับเป็น 50% โดยอิงจาก percentile 20 ของคะแนนจริงกลุ่มนี้ (แทนค่าคงที่เดิม) เพื่อให้ Top ads ส่วนใหญ่ผ่านเกณฑ์จริง. ⚠️ ข้อที่ Top ads ทำตามน้อย (<30%) ควรทบทวนน้ำหนัก/ความจำเป็น: proof-testimonial (12.5%), cta-benefits (23.7%), tech-hook3s (25%). อัปเดตอัตโนมัติทุกสัปดาห์ผ่าน GitHub Actions (scripts/refresh-checklist.ts) — merge ผ่าน Pull Request หลังรีวิว.",
   "categories": [
     {
       "id": "hook",
@@ -16,7 +16,7 @@
         {
           "id": "hook-price",
           "label": "มีตัวเลขราคา/ส่วนลดเด่นเป็นจุดสะดุดตาแรก (เช่น 990./111.-)",
-          "weight": 2
+          "weight": 1
         },
         {
           "id": "hook-pain",
@@ -37,7 +37,7 @@
         {
           "id": "proof-product",
           "label": "มีสินค้า/ขวดยา/เครื่องมือจริงในภาพ เพื่อสร้างความเป็นรูปธรรม",
-          "weight": 2
+          "weight": 1
         },
         {
           "id": "proof-testimonial",

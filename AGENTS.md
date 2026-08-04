@@ -33,3 +33,13 @@ git push -u origin fix/your-description
 gh pr create --title "fix: description" --body "รายละเอียด" --base main
 ```
 <!-- END:git-workflow-rules -->
+
+## ข้อยกเว้นเดียวของกฎ "ห้าม commit ตรง main": Weekly Creative Checklist Refresh
+
+`.github/workflows/checklist-refresh.yml` (workflow "Weekly Creative Checklist Refresh") `git commit` + `git push origin main` **ตรงเข้า main โดยไม่ผ่าน PR** — เป็นพฤติกรรมที่ตั้งใจไว้ ไม่ใช่ช่องโหว่ที่ทำผิดกฎ:
+
+- แก้เฉพาะ `data/creative-checklist.json` (ข้อมูลเกณฑ์ checklist ที่รันโดยบอท ไม่ใช่โค้ดแอป)
+- ต้องขึ้น production ทันทีให้ Vercel redeploy ทุกสัปดาห์ — ถ้าบังคับผ่าน PR จะต้องรอคน merge ก่อนเกณฑ์ใหม่ถึงจะมีผล ซึ่งขัดกับที่ตั้งใจแก้ไว้ใน PR #32 ("remove [skip ci] so Vercel redeploys after checklist refresh")
+- รันโดย `github-actions[bot]` อัตโนมัติทุกสัปดาห์ (หรือ manual trigger ผ่าน `gh workflow run checklist-refresh.yml`) ไม่ใช่ agent หรือคนแก้โค้ดตรงๆ
+
+**ห้ามใช้ข้อยกเว้นนี้เป็นบรรทัดฐานสำหรับงานอื่น** — โค้ดแอป, config, และไฟล์อื่นทั้งหมดยังต้องผ่าน branch + PR ตามกฎด้านบนเสมอ ถ้าจะแก้ไขตัว workflow นี้เอง (ไม่ใช่แค่ข้อมูลที่มันสร้าง) ก็ยังต้องผ่าน branch + PR เหมือนไฟล์อื่น

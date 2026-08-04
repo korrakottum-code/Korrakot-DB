@@ -3,7 +3,7 @@ import { requireInternalApiAuth } from "@/lib/api-auth";
 import { consumeApiRateLimit } from "@/lib/rate-limit";
 import { isSameOriginRequest } from "@/lib/security";
 import { readChecklistConfig } from "@/lib/creative-checklist-store";
-import { scoreChecklist, type MediaType } from "@/lib/creative-checklist";
+import { scoreChecklist, manualCheckItems, type MediaType } from "@/lib/creative-checklist";
 import { scoreImageAgainstChecklist, ChecklistAiError } from "@/lib/creative-checklist-ai";
 
 export const runtime = "nodejs";
@@ -61,7 +61,10 @@ export async function POST(req: NextRequest) {
 
   const allItems = config.categories.flatMap((category) => category.items);
   const relevantItems = allItems.filter(
-    (item) => !item.appliesTo || item.appliesTo === "both" || item.appliesTo === mediaType
+    (item) =>
+      // ข้อที่ต้องดูวิดีโอจริงตัดสินจากภาพนิ่งไม่ได้ — ไม่ส่งให้ AI, ให้ user ตรวจเองแทน
+      !item.requiresVideoPlayback &&
+      (!item.appliesTo || item.appliesTo === "both" || item.appliesTo === mediaType)
   );
 
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -86,6 +89,11 @@ export async function POST(req: NextRequest) {
     checkedIds,
     reasons: Object.fromEntries(reasonById),
     score,
+    manualItems: manualCheckItems(config, mediaType).map(({ categoryLabel, item }) => ({
+      categoryLabel,
+      id: item.id,
+      label: item.label,
+    })),
     configVersion: config.version,
   });
 }

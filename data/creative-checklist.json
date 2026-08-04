@@ -43,7 +43,8 @@
           "id": "proof-testimonial",
           "label": "(กรณีวิดีโอ) มีคนพูดหรือเคสจริงเล่าปัญหา/ผลลัพธ์ ไม่ใช่แค่ภาพนิ่งบรรยาย",
           "weight": 1,
-          "appliesTo": "video"
+          "appliesTo": "video",
+          "requiresVideoPlayback": true
         }
       ]
     },
@@ -128,7 +129,8 @@
           "id": "tech-hook3s",
           "label": "(กรณีวิดีโอ) 3 วินาทีแรกมี hook หรือความเคลื่อนไหวที่ดึงความสนใจ",
           "weight": 1,
-          "appliesTo": "video"
+          "appliesTo": "video",
+          "requiresVideoPlayback": true
         }
       ]
     }

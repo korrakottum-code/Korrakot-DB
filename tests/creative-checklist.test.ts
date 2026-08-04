@@ -53,6 +53,61 @@ test("scoreChecklist returns 0 percent for an empty category list", () => {
   assert.equal(result.passed, false);
 });
 
+test("scoreChecklist does not count items that require actual video playback", () => {
+  const withPlaybackItem: Pick<ChecklistConfig, "categories" | "passThreshold"> = {
+    passThreshold: 50,
+    categories: [
+      {
+        id: "tech",
+        label: "Technical",
+        items: [
+          { id: "ratio", label: "Ratio", weight: 2, appliesTo: "both" },
+          { id: "hook3s", label: "Hook 3s", weight: 1, appliesTo: "video", requiresVideoPlayback: true },
+        ],
+      },
+    ],
+  };
+
+  // วิดีโอที่ตรวจจาก thumbnail: ข้อ hook3s ต้องไม่ถูกนับ ไม่ว่าจะติ๊กหรือไม่
+  const result = scoreChecklist(withPlaybackItem, ["ratio"], "video");
+  assert.equal(result.totalWeight, 2);
+  assert.equal(result.percent, 100);
+  assert.equal(result.missingItems.length, 0);
+
+  const unchecked = scoreChecklist(withPlaybackItem, [], "video");
+  assert.equal(unchecked.missingItems.length, 1);
+  assert.equal(unchecked.missingItems[0].item.id, "ratio");
+});
+
+test("scoreChecklist uses per-media threshold when provided", () => {
+  const perMedia: Pick<ChecklistConfig, "categories" | "passThreshold" | "passThresholdByMedia"> = {
+    passThreshold: 50,
+    passThresholdByMedia: { image: 70, video: 55 },
+    categories: [
+      {
+        id: "hook",
+        label: "Hook",
+        items: [
+          { id: "a", label: "A", weight: 1 },
+          { id: "b", label: "B", weight: 1 },
+        ],
+      },
+    ],
+  };
+
+  const imageResult = scoreChecklist(perMedia, ["a"], "image"); // 50% < 70%
+  assert.equal(imageResult.threshold, 70);
+  assert.equal(imageResult.passed, false);
+
+  const videoResult = scoreChecklist(perMedia, ["a"], "video"); // 50% < 55%
+  assert.equal(videoResult.threshold, 55);
+  assert.equal(videoResult.passed, false);
+
+  const fallback = scoreChecklist({ ...perMedia, passThresholdByMedia: undefined }, ["a"], "image");
+  assert.equal(fallback.threshold, 50);
+  assert.equal(fallback.passed, true);
+});
+
 test("scoreChecklist excludes video-only items when reviewing a static image", () => {
   const withVideoItem: Pick<ChecklistConfig, "categories" | "passThreshold"> = {
     passThreshold: 80,

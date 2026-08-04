@@ -12,7 +12,7 @@ import {
   Loader2,
 } from "lucide-react";
 import LogoutButton from "@/components/LogoutButton";
-import { scoreChecklist, type ChecklistConfig, type MediaType } from "@/lib/creative-checklist";
+import { scoreChecklist, manualCheckItems, type ChecklistConfig, type MediaType } from "@/lib/creative-checklist";
 
 interface AnalyzeReason {
   id: string;
@@ -20,11 +20,47 @@ interface AnalyzeReason {
   reason: string;
 }
 
+const MAX_UPLOAD_DIMENSION = 1280;
+const RESIZE_BYTES_THRESHOLD = 1.5 * 1024 * 1024;
+
+/**
+ * ย่อรูปฝั่ง browser ก่อนอัปโหลด — ลดเวลาอัปโหลดและเวลาวิเคราะห์ของ AI ลงหลายเท่า
+ * ถ้ารูปเล็กอยู่แล้ว หรือย่อไม่สำเร็จ จะส่งไฟล์เดิมแทน
+ */
+async function downscaleForUpload(file: File): Promise<File> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxSide = Math.max(bitmap.width, bitmap.height);
+    if (maxSide <= MAX_UPLOAD_DIMENSION && file.size <= RESIZE_BYTES_THRESHOLD) {
+      bitmap.close();
+      return file;
+    }
+    const scale = Math.min(1, MAX_UPLOAD_DIMENSION / maxSide);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      bitmap.close();
+      return file;
+    }
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    if (!blob || blob.size >= file.size) return file;
+    const newName = file.name.replace(/\.(png|webp|jpeg|jpg)$/i, "") + ".jpg";
+    return new File([blob], newName, { type: "image/jpeg" });
+  } catch {
+    return file;
+  }
+}
+
 export default function CreativeChecklist() {
   const [config, setConfig] = useState<ChecklistConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [manualChecked, setManualChecked] = useState<Set<string>>(new Set());
   const [reasons, setReasons] = useState<Record<string, AnalyzeReason>>({});
   const [mediaType, setMediaType] = useState<MediaType>("image");
   const [file, setFile] = useState<File | null>(null);
@@ -75,6 +111,7 @@ export default function CreativeChecklist() {
     setAnalyzeError("");
     setHasAnalyzed(false);
     setChecked(new Set());
+    setManualChecked(new Set());
     setReasons({});
     setFile(picked);
     setPreviewUrl((prev) => {
@@ -93,8 +130,9 @@ export default function CreativeChecklist() {
     setAnalyzing(true);
     setAnalyzeError("");
     try {
+      const upload = await downscaleForUpload(file);
       const form = new FormData();
-      form.append("image", file);
+      form.append("image", upload);
       form.append("mediaType", mediaType);
       const res = await fetch("/api/creative-checklist/analyze", { method: "POST", body: form });
       const data = await res.json();
@@ -129,6 +167,20 @@ export default function CreativeChecklist() {
     if (!config) return null;
     return scoreChecklist(config, checked, mediaType);
   }, [config, checked, mediaType]);
+
+  // ข้อที่ AI ตรวจจากภาพนิ่งไม่ได้ — ให้ user ติ๊กยืนยันเอง ไม่นับคะแนน
+  const manualItems = useMemo(() => {
+    if (!config) return [];
+    return manualCheckItems(config, mediaType);
+  }, [config, mediaType]);
+
+  const toggleManualItem = (id: string) => {
+    setManualChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
   const handlePrint = () => window.print();
 
@@ -285,7 +337,7 @@ export default function CreativeChecklist() {
                     {result.passed ? "ผ่าน — พร้อมขึ้นแอด" : "ยังไม่ผ่าน — ต้องแก้ไขก่อน"}
                   </p>
                   <p className="text-xs text-gray-400">
-                    คะแนน {result.checkedWeight}/{result.totalWeight} ({result.percent}%) · เกณฑ์ผ่านคือ {config.passThreshold}%
+                    คะแนน {result.checkedWeight}/{result.totalWeight} ({result.percent}%) · เกณฑ์ผ่านคือ {result.threshold}%
                   </p>
                 </div>
               </div>
@@ -311,6 +363,31 @@ export default function CreativeChecklist() {
           </div>
         )}
 
+        {/* ข้อที่ต้องตรวจเองด้วยตา — AI ตัดสินจากภาพนิ่งไม่ได้ ไม่นับคะแนน */}
+        {hasAnalyzed && manualItems.length > 0 && (
+          <div className="bg-amber-950/30 border border-amber-800/50 rounded-2xl p-4 mb-4">
+            <h2 className="text-sm font-bold text-amber-300 mb-1">ตรวจเองก่อนขึ้นแอด (AI ดูจากภาพนิ่งไม่ได้)</h2>
+            <p className="text-xs text-amber-200/60 mb-3">
+              ข้อเหล่านี้ต้องเปิดวิดีโอจริงดู — ไม่ถูกนับในคะแนนอัตโนมัติ กรุณาติ๊กยืนยันด้วยตัวเอง
+            </p>
+            <div className="space-y-2">
+              {manualItems.map(({ categoryLabel, item }) => (
+                <label key={item.id} className="flex items-start gap-3 cursor-pointer rounded-lg p-2 hover:bg-amber-900/20">
+                  <input
+                    type="checkbox"
+                    checked={manualChecked.has(item.id)}
+                    onChange={() => toggleManualItem(item.id)}
+                    className="mt-0.5 w-4 h-4 accent-amber-500"
+                  />
+                  <span className="text-sm text-amber-100/90 flex-1">
+                    <span className="text-amber-500/70 text-xs">[{categoryLabel}]</span> {item.label}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Checklist categories */}
         {hasAnalyzed && (
           <div className="space-y-4">
@@ -318,7 +395,7 @@ export default function CreativeChecklist() {
               <div key={category.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
                 <h2 className="text-sm font-bold text-gray-200 mb-3">{category.label}</h2>
                 <div className="space-y-2">
-                  {category.items.map((item) => {
+                  {category.items.filter((item) => !item.requiresVideoPlayback).map((item) => {
                     const applicable = !item.appliesTo || item.appliesTo === "both" || item.appliesTo === mediaType;
                     const reason = reasons[item.id]?.reason;
                     return (

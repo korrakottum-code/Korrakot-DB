@@ -43,6 +43,93 @@ export function computeDataDrivenThreshold(scores: number[], options: ThresholdO
   return Math.min(max, Math.max(min, rounded));
 }
 
+/**
+ * เลือกเกณฑ์ผ่านจาก "จุดที่แยกคะแนน Top ads ออกจาก Bottom ads ได้ดีที่สุด"
+ * (balanced accuracy สูงสุด) แทนการดูแค่ percentile ของ Top ฝั่งเดียว —
+ * แก้ปัญหาเดิมที่พอ Top ads คะแนนต่ำ ระบบก็แค่ลดเกณฑ์ให้ผ่านง่ายขึ้นเรื่อยๆ
+ * ถ้าข้อมูล Bottom ไม่พอ จะ fallback ไปวิธี percentile เดิม
+ */
+export function computeSeparationThreshold(
+  topScores: number[],
+  bottomScores: number[],
+  options: ThresholdOptions & { minBottomSample?: number } = {}
+): number {
+  const { min = 50, max = 85, step = 5, minBottomSample = 5 } = options;
+  if (!topScores.length) return min;
+  if (bottomScores.length < minBottomSample) {
+    return computeDataDrivenThreshold(topScores, options);
+  }
+
+  let bestScore = -1;
+  let bestCandidates: number[] = [];
+  for (let t = min; t <= max; t += step) {
+    const topPass = topScores.filter((s) => s >= t).length / topScores.length;
+    const bottomFail = bottomScores.filter((s) => s < t).length / bottomScores.length;
+    const balanced = (topPass + bottomFail) / 2;
+    if (balanced > bestScore + 1e-9) {
+      bestScore = balanced;
+      bestCandidates = [t];
+    } else if (Math.abs(balanced - bestScore) <= 1e-9) {
+      bestCandidates.push(t);
+    }
+  }
+  // เสมอกันหลายค่า → เอาค่ากลางของช่วงที่เสมอ
+  return bestCandidates[Math.floor((bestCandidates.length - 1) / 2)];
+}
+
+export interface ItemLift {
+  id: string;
+  topRate: number;
+  bottomRate: number;
+  /** topRate - bottomRate: ยิ่งสูง = ข้อนี้ยิ่งแยกแอดดีออกจากแอดแย่ได้ */
+  lift: number;
+  topTotal: number;
+  bottomTotal: number;
+}
+
+/** เทียบ pass rate ของแต่ละข้อระหว่างกลุ่ม Top กับ Bottom */
+export function computeItemLifts(topRates: ItemPassRate[], bottomRates: ItemPassRate[]): ItemLift[] {
+  const bottomById = new Map(bottomRates.map((r) => [r.id, r]));
+  return topRates
+    .map((top) => {
+      const bottom = bottomById.get(top.id);
+      return {
+        id: top.id,
+        topRate: top.rate,
+        bottomRate: bottom?.rate ?? 0,
+        lift: Math.round((top.rate - (bottom?.rate ?? 0)) * 10) / 10,
+        topTotal: top.total,
+        bottomTotal: bottom?.total ?? 0,
+      };
+    })
+    .sort((a, b) => a.lift - b.lift);
+}
+
+/** ข้อที่ Top ads ทำไม่ต่างจาก Bottom ads (lift ต่ำ) = ไม่ช่วยทำนายว่าแอดจะดี — flag ให้คนทบทวน */
+export function findNonDiscriminativeItems(
+  lifts: ItemLift[],
+  maxLift = 10,
+  minSampleSize = 5
+): ItemLift[] {
+  return lifts.filter(
+    (item) => item.topTotal >= minSampleSize && item.bottomTotal >= minSampleSize && item.lift <= maxLift
+  );
+}
+
+/**
+ * น้ำหนักตาม lift (Top เทียบ Bottom): ข้อที่แยกแอดดี/แย่ได้ชัด (lift ≥ 25) → weight 2,
+ * นอกนั้น → weight 1. ต่างจากวิธีเดิมที่ดูแค่ pass rate ของ Top ซึ่งให้รางวัลข้อที่
+ * "ใครๆ ก็ทำ" ทั้งที่ไม่ได้ทำนายผลอะไร
+ */
+export function computeWeightUpdatesFromLifts(lifts: ItemLift[], minSampleSize = 5): Map<string, number> {
+  const updates = new Map<string, number>();
+  for (const item of lifts) {
+    if (item.topTotal < minSampleSize || item.bottomTotal < minSampleSize) continue;
+    updates.set(item.id, item.lift >= 25 ? 2 : 1);
+  }
+  return updates;
+}
+
 /** Aggregates per-item pass/fail results across multiple scored ads. */
 export function computeItemPassRates(perAdResults: { id: string; met: boolean }[][]): ItemPassRate[] {
   const counts = new Map<string, { passCount: number; total: number }>();

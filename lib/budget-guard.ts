@@ -2,22 +2,13 @@ import { CPI_TARGET } from "./management-rules";
 import { objectiveMetric } from "./reporting";
 
 /**
- * ตัวตัดไฟแอดเปลืองเงิน: ธงแคมเปญที่กำลังรันอยู่แล้วเผาเงินโดยไม่ได้ผลลัพธ์
+ * ตัวตัดไฟแอดเปลืองเงิน: ธง "ชิ้นครีเอทีฟ" ที่ยังรันอยู่แล้วเผาเงินโดยไม่ได้ผลลัพธ์
  * เพื่อให้หยุด/แก้ได้เร็วที่สุด — จากข้อมูลจริง แอดกลุ่มแย่มี CPI ฿181-652
  * ขณะที่เป้าคือ ฿100 การตัดเร็วคือส่วนที่ประหยัดงบเทสต์ได้จริง
  *
- * ตอนนี้ guard เฉพาะแคมเปญที่วัดผลด้วย Inbox (ผ่าน objectiveMetric)
- * แคมเปญ Lead/Traffic/Awareness ไม่ถูกธง เพราะเกณฑ์ CPI ใช้กับมันไม่ได้
+ * นับเฉพาะแอดที่วัดผลด้วย Inbox (ผ่าน objectiveMetric)
+ * แอดในแคมเปญ Lead/Traffic/Awareness ไม่ถูกธง เพราะเกณฑ์ CPI ใช้กับมันไม่ได้
  */
-
-export interface BudgetGuardInput {
-  spent: number;
-  inbox: number;
-  cpi: number;
-  effectiveStatus?: string;
-  objective?: string;
-  optimizationGoal?: string;
-}
 
 export type BudgetGuardLevel = "kill" | "warning";
 
@@ -33,11 +24,8 @@ export const WARN_NO_RESULT_SPEND = CPI_TARGET * 1.5;
 export const KILL_CPI = CPI_TARGET * 2;
 export const MIN_INBOX_FOR_CPI_JUDGE = 3;
 
-export function classifyBudgetWaste(input: BudgetGuardInput): BudgetGuardFlag | null {
-  if ((input.effectiveStatus || "").toUpperCase() !== "ACTIVE") return null;
-  const metric = objectiveMetric(input.objective, input.optimizationGoal);
-  if (metric.key !== "inbox") return null;
-
+/** กติกาหลัก ใช้ได้กับทั้งระดับชิ้นครีเอทีฟและระดับแคมเปญ (ไม่เช็คสถานะ/objective) */
+export function classifyWasteCore(input: { spent: number; inbox: number; cpi: number }): BudgetGuardFlag | null {
   if (input.inbox <= 0) {
     if (input.spent >= KILL_NO_RESULT_SPEND) {
       return {
@@ -73,6 +61,109 @@ export function classifyBudgetWaste(input: BudgetGuardInput): BudgetGuardFlag | 
 }
 
 /** เงินส่วนที่จ่ายเกินกว่าที่ควรจ่ายตามเป้า CPI (ไว้เรียงลำดับว่าตัวไหนเผาเงินหนักสุด) */
-export function excessSpend(input: Pick<BudgetGuardInput, "spent" | "inbox">): number {
+export function excessSpend(input: { spent: number; inbox: number }): number {
   return Math.max(0, input.spent - input.inbox * CPI_TARGET);
+}
+
+/* ── ระดับชิ้นครีเอทีฟ (จาก ad insights) ─────────────────── */
+
+/** ข้อมูลขั้นต่ำต่อแถวโฆษณา — AdInsight ใช้ได้ตรงๆ */
+export interface WasteRowInput {
+  parsed: { creativeId: string; awCode: string; branch?: string };
+  adId?: string;
+  spend: number;
+  inbox: number;
+  effectiveStatus?: string;
+  objective?: string;
+  optimizationGoal?: string;
+}
+
+export interface WastefulCreative {
+  /** เช่น "PF00-0292" — โปรแกรม+ชิ้นครีเอทีฟ เหมือนที่ใช้ในหน้า Creative */
+  groupKey: string;
+  programCode: string;
+  spend: number;
+  inbox: number;
+  cpi: number;
+  adCount: number;
+  branches: string[];
+  excess: number;
+  flag: BudgetGuardFlag;
+}
+
+/**
+ * รวมแถวโฆษณาเป็นรายชิ้นครีเอทีฟ (awBase + creativeId เหมือนหน้า Creative)
+ * แล้วธงชิ้นที่กำลังเปลืองเงิน — เรียงตัววิกฤต (kill) ขึ้นก่อน ตามด้วยเงินส่วนเกินมากสุด
+ */
+export function flagWastefulCreatives(rows: WasteRowInput[]): WastefulCreative[] {
+  const groups = new Map<
+    string,
+    { programCode: string; spend: number; inbox: number; adIds: Set<string>; branches: Set<string>; active: boolean }
+  >();
+
+  for (const row of rows) {
+    const cid = row.parsed.creativeId;
+    if (!cid) continue;
+    // นับเฉพาะแอดที่วัดผลด้วย Inbox — แคมเปญ Lead/Traffic ใช้เกณฑ์ CPI ไม่ได้
+    if (objectiveMetric(row.objective, row.optimizationGoal).key !== "inbox") continue;
+
+    const awBase = row.parsed.awCode.replace(/-\d+$/, "");
+    const key = `${awBase}-${cid}`;
+    const group = groups.get(key) || {
+      programCode: awBase.replace(/\d+$/, ""),
+      spend: 0,
+      inbox: 0,
+      adIds: new Set<string>(),
+      branches: new Set<string>(),
+      active: false,
+    };
+    group.spend += row.spend;
+    group.inbox += row.inbox;
+    if (row.adId) group.adIds.add(row.adId);
+    if (row.parsed.branch) group.branches.add(row.parsed.branch);
+    if ((row.effectiveStatus || "").toUpperCase() === "ACTIVE") group.active = true;
+    groups.set(key, group);
+  }
+
+  const flagged: WastefulCreative[] = [];
+  for (const [groupKey, group] of groups) {
+    // ธงเฉพาะชิ้นที่ยังมีแคมเปญ ACTIVE — ชิ้นที่ปิดไปแล้วไม่ได้เผาเงินต่อ
+    if (!group.active) continue;
+    const cpi = group.inbox > 0 ? group.spend / group.inbox : 0;
+    const flag = classifyWasteCore({ spent: group.spend, inbox: group.inbox, cpi });
+    if (!flag) continue;
+    flagged.push({
+      groupKey,
+      programCode: group.programCode,
+      spend: group.spend,
+      inbox: group.inbox,
+      cpi,
+      adCount: group.adIds.size,
+      branches: [...group.branches].sort(),
+      excess: excessSpend({ spent: group.spend, inbox: group.inbox }),
+      flag,
+    });
+  }
+
+  return flagged.sort((a, b) => {
+    if (a.flag.level !== b.flag.level) return a.flag.level === "kill" ? -1 : 1;
+    return b.excess - a.excess;
+  });
+}
+
+/* ── ระดับแคมเปญ (คงไว้เผื่อใช้กับหน้า Ads ภายหลัง) ────────── */
+
+export interface BudgetGuardInput {
+  spent: number;
+  inbox: number;
+  cpi: number;
+  effectiveStatus?: string;
+  objective?: string;
+  optimizationGoal?: string;
+}
+
+export function classifyBudgetWaste(input: BudgetGuardInput): BudgetGuardFlag | null {
+  if ((input.effectiveStatus || "").toUpperCase() !== "ACTIVE") return null;
+  if (objectiveMetric(input.objective, input.optimizationGoal).key !== "inbox") return null;
+  return classifyWasteCore(input);
 }

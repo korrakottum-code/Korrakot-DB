@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   BarChart,
   Bar,
@@ -24,6 +24,7 @@ import LogoutButton from "@/components/LogoutButton";
 import { COLORS } from "./theme";
 import type { GroupedRow, TabKey } from "./types";
 import { findBestCost } from "@/lib/metrics";
+import { flagWastefulCreatives } from "@/lib/budget-guard";
 
 type FetchFailure = {
   scope: string;
@@ -260,6 +261,17 @@ export default function Dashboard() {
     return Object.entries(map).sort((a, b) => b[1].spend - a[1].spend);
   })();
 
+  /* ── budget waste guard: ธงรายชิ้นครีเอทีฟที่กำลังเผาเงิน ── */
+  // คิดจากข้อมูลเต็ม (ตัดแค่สาขาเทส) — ไม่โดน filter ของ user บังจนวิกฤตหลุดสายตา
+  const wasteful = useMemo(
+    () => flagWastefulCreatives(insights.filter((i) => !testBranchNames.has(i.parsed.branch || ""))),
+    [insights, testBranchNames]
+  );
+  const criticalWaste = wasteful.filter((w) => w.flag.level === "kill");
+  const warningWaste = wasteful.filter((w) => w.flag.level === "warning");
+  const [showWarningWaste, setShowWarningWaste] = useState(false);
+  const [showAllCritical, setShowAllCritical] = useState(false);
+
   const filteredInsights = insights.filter((i) => {
     const b = i.parsed.branch || "";
     // Exclude user-hidden branches
@@ -453,6 +465,114 @@ export default function Dashboard() {
         {error && (
           <div className="bg-red-900/40 border border-red-700 rounded-lg px-4 py-3 text-red-300 text-sm">
             ❌ {error}
+          </div>
+        )}
+
+        {/* 🔥 แจ้งเตือนวิกฤต: ชิ้นครีเอทีฟที่กำลังเผาเงิน — ขึ้นก่อนทุกอย่าง */}
+        {!loading && criticalWaste.length > 0 && (
+          <div className="bg-red-950/40 border-2 border-red-700/70 rounded-xl p-4 sm:p-5">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+              <h2 className="text-sm font-bold text-red-300 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-400" />
+                วิกฤต: {criticalWaste.length} ชิ้นกำลังเผาเงิน — ควรปิดหรือเปลี่ยนครีเอทีฟทันที
+              </h2>
+              <span className="text-[11px] text-red-300/70">
+                เงินเกินเป้ารวม ~{fmtB(criticalWaste.reduce((s, w) => s + w.excess, 0))} · อิงช่วงเวลาที่เลือก
+              </span>
+            </div>
+            <div className="space-y-1.5 mt-2">
+              {(showAllCritical ? criticalWaste : criticalWaste.slice(0, 6)).map((w) => (
+                <div key={w.groupKey} className="flex items-start gap-2.5 bg-gray-900/70 rounded-lg px-3 py-2">
+                  <span className="flex-shrink-0 mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-600 text-white">
+                    ควรปิด
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-gray-100 font-medium">
+                      {w.groupKey}
+                      <span className="text-gray-400 font-normal">
+                        {" "}· {PROGRAM_MAP[w.programCode] || w.programCode}
+                        {w.branches.length > 0 && ` · ${w.branches.slice(0, 3).join(", ")}${w.branches.length > 3 ? ` +${w.branches.length - 3}` : ""}`}
+                      </span>
+                    </p>
+                    <p className="text-[11px] text-gray-400">
+                      ใช้ไป {fmtB(w.spend)} · Inbox {w.inbox} · CPI {w.inbox > 0 ? fmtB(w.cpi) : "-"} —{" "}
+                      <span className="text-red-300">{w.flag.reason}</span>
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-4 mt-2">
+              {criticalWaste.length > 6 && (
+                <button
+                  onClick={() => setShowAllCritical((v) => !v)}
+                  className="text-[11px] text-red-300/90 hover:text-red-200 underline"
+                >
+                  {showAllCritical ? "ย่อรายการ" : `ดูวิกฤตอีก ${criticalWaste.length - 6} ชิ้น`}
+                </button>
+              )}
+              {warningWaste.length > 0 && (
+                <button
+                  onClick={() => setShowWarningWaste((v) => !v)}
+                  className="text-[11px] text-amber-300/90 hover:text-amber-200 underline"
+                >
+                  {showWarningWaste ? "ซ่อนตัวเฝ้าดู" : `เฝ้าดูอีก ${warningWaste.length} ชิ้น`}
+                </button>
+              )}
+            </div>
+            {showWarningWaste && (
+              <div className="space-y-1.5 mt-2 pt-2 border-t border-red-900/50">
+                {warningWaste.map((w) => (
+                  <div key={w.groupKey} className="flex items-start gap-2.5 bg-gray-900/50 rounded-lg px-3 py-2">
+                    <span className="flex-shrink-0 mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-600/80 text-white">
+                      เฝ้าดู
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-gray-200">
+                        {w.groupKey}
+                        <span className="text-gray-500"> · {PROGRAM_MAP[w.programCode] || w.programCode}</span>
+                      </p>
+                      <p className="text-[11px] text-gray-500">
+                        ใช้ไป {fmtB(w.spend)} · Inbox {w.inbox} · CPI {w.inbox > 0 ? fmtB(w.cpi) : "-"} —{" "}
+                        <span className="text-amber-300/80">{w.flag.reason}</span>
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {/* ไม่มีวิกฤต แต่มีตัวเฝ้าดู — แถบเล็กๆ ไม่รบกวน */}
+        {!loading && criticalWaste.length === 0 && warningWaste.length > 0 && (
+          <div className="bg-amber-950/25 border border-amber-800/50 rounded-xl px-4 py-2.5">
+            <button
+              onClick={() => setShowWarningWaste((v) => !v)}
+              className="text-xs text-amber-300 hover:text-amber-200 w-full text-left"
+            >
+              ⚠️ มี {warningWaste.length} ชิ้นที่ควรเฝ้าดู (ยังไม่วิกฤต) — {showWarningWaste ? "ซ่อน" : "กดดูรายละเอียด"}
+            </button>
+            {showWarningWaste && (
+              <div className="space-y-1.5 mt-2">
+                {warningWaste.map((w) => (
+                  <div key={w.groupKey} className="flex items-start gap-2.5 bg-gray-900/50 rounded-lg px-3 py-2">
+                    <span className="flex-shrink-0 mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-600/80 text-white">
+                      เฝ้าดู
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-gray-200">
+                        {w.groupKey}
+                        <span className="text-gray-500"> · {PROGRAM_MAP[w.programCode] || w.programCode}</span>
+                      </p>
+                      <p className="text-[11px] text-gray-500">
+                        ใช้ไป {fmtB(w.spend)} · Inbox {w.inbox} · CPI {w.inbox > 0 ? fmtB(w.cpi) : "-"} —{" "}
+                        <span className="text-amber-300/80">{w.flag.reason}</span>
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

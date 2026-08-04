@@ -17,12 +17,10 @@ import {
   Tag,
   Plus,
   Check,
-  Flame,
 } from "lucide-react";
 import DateRangePicker from "@/components/DateRangePicker";
 import LogoutButton from "@/components/LogoutButton";
 import type { CampaignRow } from "@/lib/meta";
-import { classifyBudgetWaste, excessSpend, type BudgetGuardFlag } from "@/lib/budget-guard";
 
 type FetchFailure = {
   scope: string;
@@ -341,19 +339,6 @@ export default function AdsPage() {
     });
   }, [filtered, sortCol, sortDir, tags]);
 
-  /* ── budget waste guard ─────────────────────── */
-  // ธงจากรายการเต็ม (ไม่ผ่าน filter ของ user) เพื่อไม่ให้แอดเผาเงินหลุดสายตาเพราะบังเอิญกรองไว้
-  const wasteFlags = useMemo(() => {
-    return campaigns
-      .map((c) => ({ campaign: c, flag: classifyBudgetWaste(c) }))
-      .filter((item): item is { campaign: CampaignRow; flag: BudgetGuardFlag } => item.flag !== null)
-      .sort((a, b) => {
-        if (a.flag.level !== b.flag.level) return a.flag.level === "kill" ? -1 : 1;
-        return excessSpend(b.campaign) - excessSpend(a.campaign);
-      });
-  }, [campaigns]);
-  const [showAllWaste, setShowAllWaste] = useState(false);
-
   /* ── aggregated KPIs ────────────────────────── */
 
   const totalSpent = filtered.reduce((s, c) => s + c.spent, 0);
@@ -516,57 +501,6 @@ export default function AdsPage() {
             </div>
           ))}
         </div>
-
-        {/* Budget waste guard */}
-        {wasteFlags.length > 0 && (
-          <div className="bg-red-950/30 border border-red-800/60 rounded-xl p-4 sm:p-5">
-            <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
-              <h2 className="text-sm font-bold text-red-300 flex items-center gap-2">
-                <Flame className="w-4 h-4 text-red-400" />
-                แอดที่กำลังเปลืองเงิน ({wasteFlags.length} แคมเปญ)
-              </h2>
-              <span className="text-[11px] text-red-300/60">
-                เงินส่วนเกินเป้ารวม ~{fmtB(wasteFlags.reduce((s, w) => s + excessSpend(w.campaign), 0))} · อิงช่วงเวลาที่เลือกอยู่
-              </span>
-            </div>
-            <p className="text-[11px] text-red-200/50 mb-3">
-              เฉพาะแคมเปญที่ยัง ACTIVE และวัดผลด้วย Inbox — ตัดไฟเร็ว = งบเทสต์เหลือไปลองตัวใหม่
-            </p>
-            <div className="space-y-1.5">
-              {(showAllWaste ? wasteFlags : wasteFlags.slice(0, 8)).map(({ campaign, flag }) => (
-                <div
-                  key={`${campaign.accountId}-${campaign.campaignId}`}
-                  className="flex items-start gap-2.5 bg-gray-900/60 rounded-lg px-3 py-2"
-                >
-                  <span
-                    className={`flex-shrink-0 mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                      flag.level === "kill" ? "bg-red-600/80 text-white" : "bg-amber-600/70 text-white"
-                    }`}
-                  >
-                    {flag.level === "kill" ? "ควรปิด" : "เฝ้าดู"}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs text-gray-200 truncate" title={campaign.campaignName}>
-                      {campaign.campaignName}
-                      <span className="text-gray-500"> · {campaign.accountName}</span>
-                    </p>
-                    <p className="text-[11px] text-gray-400">
-                      ใช้ไป {fmtB(campaign.spent)} · Inbox {fmt(campaign.inbox)} · CPI {campaign.inbox > 0 ? fmtB(campaign.cpi) : "-"} — <span className={flag.level === "kill" ? "text-red-300" : "text-amber-300"}>{flag.reason}</span>
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {wasteFlags.length > 8 && (
-              <button
-                onClick={() => setShowAllWaste((v) => !v)}
-                className="mt-2 text-[11px] text-red-300/80 hover:text-red-200 underline"
-              >
-                {showAllWaste ? "ย่อรายการ" : `ดูอีก ${wasteFlags.length - 8} แคมเปญ`}
-              </button>
-            )}
-          </div>
-        )}
 
         {/* Filters section */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 sm:p-6">

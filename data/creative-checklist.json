@@ -1,8 +1,8 @@
 {
-  "version": "2026-08-03.v1",
+  "version": "2026-08-03.v2",
   "lastUpdated": "2026-08-03",
-  "passThreshold": 50,
-  "sourceNote": "สรุปจาก Top 40 ครีเอทีฟ (CPI ต่ำสุดที่มีข้อมูลเชื่อถือได้) ในช่วง 2026-07-04 ถึง 2026-08-03 (32 static image, 8 วิดีโอ). คะแนนเฉลี่ยของ Top ads = 68.9%, ต่ำสุด = 20%. passThreshold ปรับเป็น 50% โดยอิงจาก percentile 20 ของคะแนนจริงกลุ่มนี้ (แทนค่าคงที่เดิม) เพื่อให้ Top ads ส่วนใหญ่ผ่านเกณฑ์จริง. ⚠️ ข้อที่ Top ads ทำตามน้อย (<30%) ควรทบทวนน้ำหนัก/ความจำเป็น: proof-testimonial (12.5%), cta-benefits (23.7%), tech-hook3s (25%). อัปเดตอัตโนมัติทุกสัปดาห์ผ่าน GitHub Actions (scripts/refresh-checklist.ts) — merge ผ่าน Pull Request หลังรีวิว.",
+  "passThreshold": 60,
+  "sourceNote": "เทียบ Top 40 ครีเอทีฟ (CPI ต่ำสุด) กับ Bottom 40 ครีเอทีฟ (CPI สูงสุด) ที่มีข้อมูลเชื่อถือได้ ในช่วง 2026-07-05 ถึง 2026-08-04 (Top: 31 ภาพนิ่ง, 9 วิดีโอ). คะแนนเฉลี่ย Top = 72.9%, Bottom = 72.6%. เกณฑ์ผ่านตั้งที่จุดที่แยกสองกลุ่มได้ดีที่สุด: ภาพนิ่ง 60%, วิดีโอ 60% (ไม่ใช่จุดที่ทำให้ Top ผ่านเยอะสุดแบบเดิม). ข้อที่ต้องดูวิดีโอจริง (requiresVideoPlayback) ไม่ถูกนับคะแนนอัตโนมัติ — แสดงให้ตรวจเองใน UI แทน. ⚠️ ข้อที่แยกแอดดี/แย่ไม่ได้ (Top ทำไม่ต่างจาก Bottom) ควรทบทวน: cta-benefits (Top 5% vs Bottom 32.5%), hook-pain (Top 30% vs Bottom 50%), brand-tone (Top 80% vs Bottom 92.5%), offer-match (Top 65% vs Bottom 67.5%), hook-price (Top 72.5% vs Bottom 75%), offer-clear (Top 72.5% vs Bottom 75%), tech-notcut (Top 100% vs Bottom 100%), cta-clear (Top 30% vs Bottom 27.5%), offer-anchor (Top 60% vs Bottom 57.5%), brand-contrast (Top 97.5% vs Bottom 95%), tech-ratio (Top 100% vs Bottom 97.5%), hook-readable (Top 95% vs Bottom 90%), brand-logo (Top 87.5% vs Bottom 80%). อัปเดตอัตโนมัติทุกสัปดาห์ผ่าน GitHub Actions (scripts/refresh-checklist.ts) — merge ผ่าน Pull Request หลังรีวิว.",
   "categories": [
     {
       "id": "hook",
@@ -11,7 +11,7 @@
         {
           "id": "hook-readable",
           "label": "พาดหัวตัวใหญ่ อ่านออกภายใน 1 วินาที แม้ปิดเสียงหรือเลื่อนผ่านเร็ว",
-          "weight": 2
+          "weight": 1
         },
         {
           "id": "hook-price",
@@ -55,7 +55,7 @@
         {
           "id": "offer-clear",
           "label": "ราคาชัดเจน ตัวใหญ่ อ่านง่าย มีหน่วยบาท",
-          "weight": 2
+          "weight": 1
         },
         {
           "id": "offer-anchor",
@@ -76,17 +76,17 @@
         {
           "id": "brand-logo",
           "label": "โลโก้ Class Clinic อยู่ตำแหน่งเดิมทุกครั้ง (มุมบน) และมองเห็นชัด",
-          "weight": 2
+          "weight": 1
         },
         {
           "id": "brand-tone",
           "label": "โทนสีตรงกับ brand guideline (เขียว/ทอง/ขาว-ดำ หรือแดง-เหลืองตามแคมเปญ)",
-          "weight": 2
+          "weight": 1
         },
         {
           "id": "brand-contrast",
           "label": "ตัวอักษรมี contrast ชัดกับพื้นหลัง อ่านง่ายบนพื้น feed",
-          "weight": 2
+          "weight": 1
         }
       ]
     },
@@ -118,12 +118,12 @@
         {
           "id": "tech-ratio",
           "label": "อัตราส่วนภาพเหมาะกับ Feed/Story ที่จะใช้ (1:1, 4:5 หรือ 9:16)",
-          "weight": 2
+          "weight": 1
         },
         {
           "id": "tech-notcut",
           "label": "ข้อความ/โลโก้ไม่ถูกบังหรือตัดขอบเมื่อแสดงบนมือถือ",
-          "weight": 2
+          "weight": 1
         },
         {
           "id": "tech-hook3s",
@@ -134,5 +134,9 @@
         }
       ]
     }
-  ]
+  ],
+  "passThresholdByMedia": {
+    "image": 60,
+    "video": 60
+  }
 }

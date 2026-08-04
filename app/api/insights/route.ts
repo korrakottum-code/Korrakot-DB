@@ -18,6 +18,9 @@ import {
 import { createSnapshotId } from "@/lib/report-export";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
+// หลัง cache หมดอายุ ยังเสิร์ฟข้อมูลเก่าได้อีก 1 ชม. ระหว่างรีเฟรชจาก Meta เบื้องหลัง
+// — หน้าเว็บขึ้นทันทีเสมอ ไม่ต้องรอโหลดใหม่ทั้งชุด
+const CACHE_STALE_TTL_MS = 60 * 60 * 1000;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -134,7 +137,7 @@ export async function GET(req: NextRequest) {
       ];
 
       return { insights, previousInsights, campaigns, accounts, failures };
-    }, forceRefresh);
+    }, forceRefresh, { staleTtlMs: CACHE_STALE_TTL_MS });
 
     const rows = cached.value.insights;
     const totals = sumReportingRows(rows);
@@ -240,7 +243,7 @@ export async function GET(req: NextRequest) {
       statusBreakdown,
       pacing,
       coverage,
-      cache: { hit: cached.hit, fetchedAt: cached.fetchedAt, asOf: periods.asOf },
+      cache: { hit: cached.hit, fetchedAt: cached.fetchedAt, asOf: periods.asOf, stale: cached.stale === true },
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";

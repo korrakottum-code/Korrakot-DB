@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
-import { RefreshCw, AlertTriangle, MapPin, Layers, Gauge, Target, Settings2, BarChart3, ClipboardList } from "lucide-react";
+import { RefreshCw, AlertTriangle, MapPin, Layers, Gauge, Target, Settings2, BarChart3, ClipboardList, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import DateRangePicker from "@/components/DateRangePicker";
 import { BRANCH_MAP, PROGRAM_MAP } from "@/lib/parser";
@@ -271,6 +271,7 @@ export default function Dashboard() {
   const warningWaste = wasteful.filter((w) => w.flag.level === "warning");
   const [showWarningWaste, setShowWarningWaste] = useState(false);
   const [showAllCritical, setShowAllCritical] = useState(false);
+  const [criticalPanelCollapsed, setCriticalPanelCollapsed] = useState(false);
 
   const filteredInsights = insights.filter((i) => {
     const b = i.parsed.branch || "";
@@ -471,15 +472,24 @@ export default function Dashboard() {
         {/* 🔥 แจ้งเตือนวิกฤต: ชิ้นครีเอทีฟที่กำลังเผาเงิน — ขึ้นก่อนทุกอย่าง */}
         {!loading && criticalWaste.length > 0 && (
           <div className="bg-red-950/40 border-2 border-red-700/70 rounded-xl p-4 sm:p-5">
-            <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+            <button
+              onClick={() => setCriticalPanelCollapsed((v) => !v)}
+              className="w-full flex items-center justify-between flex-wrap gap-2 mb-1 text-left"
+              aria-expanded={!criticalPanelCollapsed}
+            >
               <h2 className="text-sm font-bold text-red-300 flex items-center gap-2">
+                <ChevronDown
+                  className={`w-4 h-4 text-red-400 flex-shrink-0 transition-transform ${criticalPanelCollapsed ? "-rotate-90" : ""}`}
+                />
                 <AlertTriangle className="w-4 h-4 text-red-400" />
                 วิกฤต: {criticalWaste.length} ชิ้นกำลังเผาเงิน — ควรปิดหรือเปลี่ยนครีเอทีฟทันที
               </h2>
               <span className="text-[11px] text-red-300/70">
                 เงินเกินเป้ารวม ~{fmtB(criticalWaste.reduce((s, w) => s + w.excess, 0))} · อิงช่วงเวลาที่เลือก
               </span>
-            </div>
+            </button>
+            {criticalPanelCollapsed ? null : (
+              <>
             <div className="space-y-1.5 mt-2">
               {(showAllCritical ? criticalWaste : criticalWaste.slice(0, 6)).map((w) => (
                 <div key={w.groupKey} className="flex items-start gap-2.5 bg-gray-900/70 rounded-lg px-3 py-2">
@@ -540,6 +550,8 @@ export default function Dashboard() {
                   </div>
                 ))}
               </div>
+            )}
+              </>
             )}
           </div>
         )}

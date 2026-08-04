@@ -77,6 +77,7 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
   const [modal, setModal] = useState<ModalData | null>(null);
   const [sortBy, setSortBy] = useState<SortKey>("spend");
   const [expandedPrograms, setExpandedPrograms] = useState<Set<string>>(new Set());
+  const [flatView, setFlatView] = useState(false);
 
   // Apply branch filter on insights
   const filteredInsights = insights.filter((i) => {
@@ -218,6 +219,11 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
     }
   }, [expandedPrograms]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Flat view — fetch thumbnails for every visible creative, not just heroes
+  useEffect(() => {
+    if (flatView) fetchThumbnails(visibleRows);
+  }, [flatView]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div>
       {/* Modal */}
@@ -298,7 +304,96 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
         <span className="text-[10px] text-gray-500 whitespace-nowrap">CPI/CPL ใช้เฉพาะรายการที่มีผลลัพธ์ ≥ {MIN_BEST_ACTIONS}</span>
       </div>
 
+      {/* View mode toggle — grouped by program (default) vs flat all-creatives */}
+      <div className="flex items-center gap-2 mb-4 text-[11px] sm:text-xs">
+        <button
+          onClick={() => setFlatView(false)}
+          className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
+            !flatView ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800"
+          }`}
+        >
+          จัดกลุ่มตามโปรแกรม
+        </button>
+        <button
+          onClick={() => setFlatView(true)}
+          className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
+            flatView ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800"
+          }`}
+        >
+          ดูทั้งหมด (ไม่แบ่งกลุ่ม)
+        </button>
+        {flatView && <span className="text-[10px] text-gray-500">{visibleRows.length} ชิ้น</span>}
+      </div>
+
+      {/* Flat view — every creative in one grid, no program grouping */}
+      {flatView && (
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2">
+          {visibleRows.map((row) => {
+            const creative = creatives[row.groupKey];
+            const isVideo = !!(creative?.videoId) || creative?.objectType === "VIDEO";
+            return (
+              <div
+                key={row.groupKey}
+                className="bg-gray-800 border border-gray-700 rounded-lg overflow-hidden hover:border-indigo-500 transition-colors cursor-pointer"
+                onClick={() => creative?.thumbnailUrl && setModal({
+                  thumbnailUrl: creative.thumbnailUrl, isVideo,
+                  groupKey: row.groupKey, program: row.program, sub: row.sub,
+                  spend: row.spend, inbox: row.inbox, cpi: row.cpi,
+                  leads: row.leads, cpl: row.cpl, branchCount: row.branchCount,
+                })}
+              >
+                <div className="relative w-full bg-gray-900 overflow-hidden" style={{aspectRatio: "4 / 3"}}>
+                  <div className="w-full h-full">
+                    {creative?.thumbnailUrl ? (
+                      <>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={proxyUrl(creative.thumbnailUrl)} alt={row.awCodeBase} className="w-full h-full object-cover" />
+                        {isVideo && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="bg-black/60 rounded-full p-1.5"><Play className="w-4 h-4 text-white fill-white" /></div>
+                          </div>
+                        )}
+                      </>
+                    ) : loading ? (
+                      <div className="w-full h-full bg-slate-800/80 animate-pulse flex items-center justify-center">
+                        <div className="w-8 h-8 rounded bg-slate-700/40" />
+                      </div>
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-gray-600">
+                        <ImageIcon className="w-5 h-5 mb-1" /><span className="text-[10px]">โหลดไม่ได้</span>
+                      </div>
+                    )}
+                    <div className="absolute top-1 right-1">
+                      <span className={`text-[9px] px-1 py-0.5 rounded font-medium ${
+                        creative?.objectType === "BOOST_POST" ? "bg-gray-600 text-white"
+                        : isVideo ? "bg-purple-600 text-white" : "bg-blue-600 text-white"
+                      }`}>
+                        {creative?.objectType === "BOOST_POST" ? "Boost" : isVideo ? "VDO" : "IMG"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-1.5 space-y-0.5">
+                  <p className="text-[11px] font-mono text-indigo-300 truncate">{row.awCodeBase}-{row.creativeId}</p>
+                  <p className="text-[10px] text-gray-400 truncate">
+                    {row.program}{row.sub && row.sub !== "รวม" ? ` ${row.sub}` : ""}
+                    {row.branchCount > 1 ? ` (${row.branchCount} สาขา)` : ""}
+                  </p>
+                  <div className="grid grid-cols-2 gap-x-1 pt-0.5 border-t border-gray-700">
+                    <div><p className="text-[9px] text-gray-500">Spend</p><p className="text-[10px] font-medium text-emerald-400">{fmtB(row.spend)}</p></div>
+                    <div><p className="text-[9px] text-gray-500">Inbox</p><p className="text-[10px] font-medium text-purple-400">{fmt(row.inbox)}</p></div>
+                    <div><p className="text-[9px] text-gray-500">CPI</p><p className="text-[10px] font-medium text-yellow-400">{hasReliableMetric(row, "cpi") ? fmtB(row.cpi) : "น้อย"}</p></div>
+                    <div><p className="text-[9px] text-gray-500">CPL</p><p className="text-[10px] font-medium text-pink-400">{hasReliableMetric(row, "cpl") ? fmtB(row.cpl) : "น้อย"}</p></div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Hero section — one program group per row */}
+      {!flatView && (
       <div className="space-y-4">
         {programList.map(([program, progRows]) => {
           const top3 = progRows.slice(0, 3);
@@ -452,6 +547,7 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
           );
         })}
       </div>
+      )}
     </div>
   );
 }

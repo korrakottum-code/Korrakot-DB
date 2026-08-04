@@ -76,21 +76,21 @@
 ## PR 2 — branch `feat/insights-swr-cache` (แตกจาก `main` ใหม่ ไม่ต้องรอ PR 1)
 
 ### 2.1 `lib/server-cache.ts`
-- [ ] เพิ่ม option `staleTtlMs` ให้ `getServerCache(key, ttlMs, loader, forceRefresh, opts?)`
-- [ ] พฤติกรรม: ถ้า entry หมดอายุแต่ยังไม่เกิน `staleTtlMs` นับจาก expiresAt → **คืนค่าเก่าทันที** (`hit: true, stale: true`) แล้วยิง loader เบื้องหลังผ่านกลไก inFlight เดิม (กัน refresh ซ้อน, `.catch()` กัน unhandled rejection — ถ้า refresh เบื้องหลังพัง ให้เก็บค่าเก่าไว้)
-- [ ] เกิน staleTtlMs → รอ loader เหมือนเดิม; `forceRefresh` → ข้าม cache เหมือนเดิม
-- [ ] เพิ่ม `stale?: boolean` ใน `CacheResult`
+- [x] เพิ่ม option `staleTtlMs` ให้ `getServerCache(key, ttlMs, loader, forceRefresh, opts?)`
+- [x] พฤติกรรม: ถ้า entry หมดอายุแต่ยังไม่เกิน `staleTtlMs` นับจาก expiresAt → **คืนค่าเก่าทันที** (`hit: true, stale: true`) แล้วยิง loader เบื้องหลังผ่านกลไก inFlight เดิม (กัน refresh ซ้อน, `.catch()` กัน unhandled rejection — ถ้า refresh เบื้องหลังพัง ให้เก็บค่าเก่าไว้)
+- [x] เกิน staleTtlMs → รอ loader เหมือนเดิม; `forceRefresh` → ข้าม cache เหมือนเดิม
+- [x] เพิ่ม `stale?: boolean` ใน `CacheResult`
 
 ### 2.2 `app/api/insights/route.ts`
-- [ ] ส่ง `staleTtlMs: 60 * 60 * 1000` (เสิร์ฟของเก่าได้ไม่เกิน 1 ชม. ระหว่างรีเฟรชเบื้องหลัง)
-- [ ] ใส่ `stale` ลงใน `cache: {...}` ของ response (UI จะได้แสดง "กำลังอัปเดต" ได้ในอนาคต)
+- [x] ส่ง `staleTtlMs: 60 * 60 * 1000` (เสิร์ฟของเก่าได้ไม่เกิน 1 ชม. ระหว่างรีเฟรชเบื้องหลัง)
+- [x] ใส่ `stale` ลงใน `cache: {...}` ของ response (UI จะได้แสดง "กำลังอัปเดต" ได้ในอนาคต)
 
 ### 2.3 Tests
-- [ ] `server-cache.test.ts`: เคสคืน stale ทันที + loader ถูกเรียกเบื้องหลัง 1 ครั้ง, เคสเกิน staleTtl ต้องรอ loader, เคส background refresh ล้มเหลวแล้วยังเสิร์ฟค่าเก่าได้
-- [ ] `npm run check` ผ่าน
+- [x] `server-cache.test.ts`: เคสคืน stale ทันที + loader ถูกเรียกเบื้องหลัง 1 ครั้ง, เคสเกิน staleTtl ต้องรอ loader, เคส background refresh ล้มเหลวแล้วยังเสิร์ฟค่าเก่าได้
+- [x] `npm run check` ผ่าน
 
 ### 2.4 ปิดงาน PR 2
-- [ ] commit + push + `gh pr create --base main`
+- [x] commit + push + `gh pr create --base main`
 
 ## สิ่งที่ตัดสินใจไว้แล้ว (อย่าเปลี่ยนโดยไม่ถาม user)
 - ข้อ requiresVideoPlayback **ไม่นับคะแนน** (ไม่ใช่แค่ลด weight) — เพราะ AI ไม่มีข้อมูลจะตัดสิน การนับ = noise
@@ -98,5 +98,8 @@
 - ห้าม auto-ลบเกณฑ์ — ข้อที่ไม่ discriminate แค่ถูก flag ใน sourceNote ให้คนรีวิว
 - การย่อรูปทำฝั่ง browser ไม่ใช่ server (ลดทั้งเวลาอัปโหลดและ token)
 
-## สถานะล่าสุด
+## สถานะล่าสุด (2026-08-04)
+- PR 1: https://github.com/korrakottum-code/Korrakot-DB/pull/35 (branch fix/checklist-discriminative-scoring)
+- PR 2: https://github.com/korrakottum-code/Korrakot-DB/pull/36 (branch feat/insights-swr-cache)
+- งานโค้ดเสร็จหมดแล้ว รอ user review/merge — หลัง merge PR 1 ให้รัน `gh workflow run checklist-refresh.yml` เพื่อคำนวณ threshold ใหม่ด้วยวิธี separation
 - อัปเดต checkbox ด้านบนทุกครั้งที่ทำเสร็จ แล้ว commit ไฟล์นี้ไปกับงานด้วย

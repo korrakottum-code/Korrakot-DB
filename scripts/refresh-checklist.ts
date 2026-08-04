@@ -42,6 +42,9 @@ import {
 } from "../lib/creative-checklist-stats";
 
 const CONFIG_PATH = path.join(process.cwd(), "data", "creative-checklist.json");
+// เก็บผลวิเคราะห์รายแอดของทุกรอบไว้เป็นประวัติ เพื่อสะสมข้อมูลไปหาแพทเทิร์น
+// "แอดนางฟ้า" รายโปรแกรม/สาขาในระยะยาว (ก่อนหน้านี้ข้อมูลถูกทิ้งหมดหลังรันเสร็จ)
+const ANALYSIS_DIR = path.join(process.cwd(), "data", "checklist-analysis");
 const TOP_N = Number(process.env.CHECKLIST_TOP_N || 40);
 const BOTTOM_N = Number(process.env.CHECKLIST_BOTTOM_N || TOP_N);
 const LOOKBACK_DAYS = Number(process.env.CHECKLIST_LOOKBACK_DAYS || 30);
@@ -161,22 +164,37 @@ async function main() {
     .flatMap((category) => category.items)
     .filter((item) => !item.requiresVideoPlayback);
 
+  interface AdAnalysisRecord {
+    group: "top" | "bottom";
+    groupKey: string;
+    accountId: string;
+    media: MediaType;
+    spend: number;
+    inbox: number;
+    cpi: number;
+    score: number;
+    /** ผลรายข้อจาก AI: item id → ผ่าน/ไม่ผ่าน */
+    items: Record<string, boolean>;
+  }
+
   interface GroupResult {
     scores: number[];
     imageScores: number[];
     videoScores: number[];
     itemResults: { id: string; met: boolean }[][];
+    records: AdAnalysisRecord[];
     imageCount: number;
     videoCount: number;
     failedCount: number;
   }
 
-  async function scoreGroup(groupLabel: string, creatives: TopCreative[]): Promise<GroupResult> {
+  async function scoreGroup(groupLabel: "top" | "bottom", creatives: TopCreative[]): Promise<GroupResult> {
     const result: GroupResult = {
       scores: [],
       imageScores: [],
       videoScores: [],
       itemResults: [],
+      records: [],
       imageCount: 0,
       videoCount: 0,
       failedCount: 0,
@@ -199,6 +217,17 @@ async function main() {
         const score = scoreChecklist(checklist, checkedIds, mediaType);
         result.scores.push(score.percent);
         result.itemResults.push(aiResults);
+        result.records.push({
+          group: groupLabel,
+          groupKey: creative.groupKey,
+          accountId: creative.accountId,
+          media: mediaType,
+          spend: Math.round(creative.spend * 100) / 100,
+          inbox: creative.inbox,
+          cpi: Math.round(creative.cpi * 100) / 100,
+          score: score.percent,
+          items: Object.fromEntries(aiResults.map((r) => [r.id, r.met])),
+        });
         if (mediaType === "video") {
           result.videoCount += 1;
           result.videoScores.push(score.percent);
@@ -289,6 +318,20 @@ async function main() {
   console.log(
     `\nWrote updated checklist: passThreshold ${config.passThreshold} → ${newThreshold} (image ${imageThreshold}, video ${videoThreshold}), version ${nextVersion}`
   );
+
+  const analysisSnapshot = {
+    generatedAt: new Date().toISOString(),
+    since,
+    until,
+    configVersion: nextVersion,
+    thresholds: { combined: newThreshold, image: imageThreshold, video: videoThreshold },
+    itemLifts,
+    ads: [...topGroup.records, ...bottomGroup.records],
+  };
+  fs.mkdirSync(ANALYSIS_DIR, { recursive: true });
+  const analysisPath = path.join(ANALYSIS_DIR, `${until}.json`);
+  fs.writeFileSync(analysisPath, JSON.stringify(analysisSnapshot, null, 2) + "\n", "utf-8");
+  console.log(`Wrote per-ad analysis snapshot: ${analysisPath} (${analysisSnapshot.ads.length} ads)`);
 
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
   const summary = [

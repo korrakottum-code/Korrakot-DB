@@ -41,9 +41,10 @@ interface Props {
   insights: AdInsight[];
   prevInsights?: AdInsight[];
   filterSummary?: string;
+  showComparison?: boolean;
 }
 
-export default function KpiCards({ insights, prevInsights = [], filterSummary }: Props) {
+export default function KpiCards({ insights, prevInsights = [], filterSummary, showComparison = false }: Props) {
   const totalSpend = insights.reduce((s, i) => s + i.spend, 0);
   const totalImpressions = insights.reduce((s, i) => s + i.impressions, 0);
   const totalInbox = insights.reduce((s, i) => s + i.inbox, 0);
@@ -63,6 +64,7 @@ export default function KpiCards({ insights, prevInsights = [], filterSummary }:
     { 
       label: "ยอดใช้จ่าย", 
       value: fmtB(totalSpend), 
+      prevValue: fmtB(prevTotalSpend),
       icon: DollarSign, 
       color: "text-emerald-400", 
       tint: "bg-emerald-500/15",
@@ -71,6 +73,7 @@ export default function KpiCards({ insights, prevInsights = [], filterSummary }:
     { 
       label: "Impressions", 
       value: fmt(totalImpressions), 
+      prevValue: fmt(prevTotalImpressions),
       icon: Eye, 
       color: "text-sky-400", 
       tint: "bg-sky-500/15",
@@ -79,6 +82,7 @@ export default function KpiCards({ insights, prevInsights = [], filterSummary }:
     { 
       label: "Inbox", 
       value: fmt(totalInbox), 
+      prevValue: fmt(prevTotalInbox),
       icon: MousePointer, 
       color: "text-purple-400", 
       tint: "bg-purple-500/15",
@@ -87,6 +91,7 @@ export default function KpiCards({ insights, prevInsights = [], filterSummary }:
     { 
       label: "CPI", 
       value: totalInbox > 0 ? `฿${avgCPI.toFixed(0)}` : "-", 
+      prevValue: prevTotalInbox > 0 ? `฿${prevAvgCPI.toFixed(0)}` : "-",
       icon: TrendingUp, 
       color: "text-amber-400", 
       tint: "bg-amber-500/15",
@@ -95,6 +100,7 @@ export default function KpiCards({ insights, prevInsights = [], filterSummary }:
     { 
       label: "Leads", 
       value: fmt(totalLeads), 
+      prevValue: fmt(prevTotalLeads),
       icon: MousePointer, 
       color: "text-blue-400", 
       tint: "bg-blue-500/15",
@@ -103,6 +109,7 @@ export default function KpiCards({ insights, prevInsights = [], filterSummary }:
     { 
       label: "CPL", 
       value: totalLeads > 0 ? `฿${avgCPL.toFixed(0)}` : "-", 
+      prevValue: prevTotalLeads > 0 ? `฿${prevAvgCPL.toFixed(0)}` : "-",
       icon: DollarSign, 
       color: "text-pink-400", 
       tint: "bg-pink-500/15",
@@ -126,7 +133,7 @@ export default function KpiCards({ insights, prevInsights = [], filterSummary }:
         {cards.map((card) => (
           <div
             key={card.label}
-            className="bg-gradient-to-br from-slate-900 to-slate-850 border border-slate-800/80 rounded-xl p-3 md:p-4 shadow-lg shadow-black/20 flex flex-col gap-2"
+            className="bg-gradient-to-br from-slate-900 to-slate-850 border border-slate-800/80 rounded-xl p-3 md:p-4 shadow-lg shadow-black/20 flex flex-col justify-between gap-1.5"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -136,9 +143,17 @@ export default function KpiCards({ insights, prevInsights = [], filterSummary }:
                 <span className="text-xs text-slate-300">{card.label}</span>
               </div>
             </div>
-            <div className="flex items-baseline flex-wrap gap-x-1.5 gap-y-0.5">
-              <div className="text-xl md:text-2xl font-bold text-white">{card.value}</div>
-              {card.change}
+            <div>
+              <div className="flex items-baseline flex-wrap gap-x-1.5 gap-y-0.5">
+                <div className="text-xl md:text-2xl font-bold text-white">{card.value}</div>
+                {card.change}
+              </div>
+              {(showComparison || prevInsights.length > 0) && (
+                <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-1 border-t border-slate-800/60 pt-1">
+                  <span className="text-slate-500">ช่วงก่อน:</span>
+                  <span className="font-medium text-slate-300">{card.prevValue}</span>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -153,3 +168,4 @@ export default function KpiCards({ insights, prevInsights = [], filterSummary }:
     </div>
   );
 }
+

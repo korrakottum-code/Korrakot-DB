@@ -68,6 +68,56 @@ function groupBy(insights: AdInsight[], key: TabKey): GroupedRow[] {
     .sort((a, b) => b.spend - a.spend);
 }
 
+function groupByWithPrev(insights: AdInsight[], prevInsights: AdInsight[], key: TabKey): GroupedRow[] {
+  const map: Record<string, GroupedRow> = {};
+
+  for (const ins of insights) {
+    let name = "";
+    if (key === "branch") name = ins.parsed.branch || ins.parsed.branchCode || "ไม่ระบุ";
+    else if (key === "program") name = ins.parsed.program || ins.parsed.programCode || "ไม่ระบุ";
+    else if (key === "creative") name = ins.parsed.awCode || "ไม่ระบุ";
+
+    if (!map[name]) {
+      map[name] = { name, spend: 0, impressions: 0, inbox: 0, cpi: 0, leads: 0, cpl: 0, prevSpend: 0, prevImpressions: 0, prevInbox: 0, prevCpi: 0, prevLeads: 0, prevCpl: 0 };
+    }
+    map[name].spend += ins.spend;
+    map[name].impressions += ins.impressions;
+    map[name].inbox += ins.inbox;
+    map[name].leads += ins.leads;
+  }
+
+  for (const ins of prevInsights) {
+    let name = "";
+    if (key === "branch") name = ins.parsed.branch || ins.parsed.branchCode || "ไม่ระบุ";
+    else if (key === "program") name = ins.parsed.program || ins.parsed.programCode || "ไม่ระบุ";
+    else if (key === "creative") name = ins.parsed.awCode || "ไม่ระบุ";
+
+    if (!map[name]) {
+      map[name] = { name, spend: 0, impressions: 0, inbox: 0, cpi: 0, leads: 0, cpl: 0, prevSpend: 0, prevImpressions: 0, prevInbox: 0, prevCpi: 0, prevLeads: 0, prevCpl: 0 };
+    }
+    if (map[name].prevSpend === undefined) map[name].prevSpend = 0;
+    if (map[name].prevImpressions === undefined) map[name].prevImpressions = 0;
+    if (map[name].prevInbox === undefined) map[name].prevInbox = 0;
+    if (map[name].prevLeads === undefined) map[name].prevLeads = 0;
+
+    map[name].prevSpend! += ins.spend;
+    map[name].prevImpressions! += ins.impressions;
+    map[name].prevInbox! += ins.inbox;
+    map[name].prevLeads! += ins.leads;
+  }
+
+  return Object.values(map)
+    .map((r) => ({
+      ...r,
+      cpi: r.inbox > 0 ? r.spend / r.inbox : 0,
+      cpl: r.leads > 0 ? r.spend / r.leads : 0,
+      prevCpi: (r.prevInbox || 0) > 0 ? (r.prevSpend || 0) / r.prevInbox! : 0,
+      prevCpl: (r.prevLeads || 0) > 0 ? (r.prevSpend || 0) / r.prevLeads! : 0,
+    }))
+    .sort((a, b) => b.spend - a.spend)
+    .slice(0, 50);
+}
+
 function fmt(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
@@ -91,6 +141,9 @@ export default function Dashboard() {
   const [branchFilter, setBranchFilter] = useState<"all" | "class" | "classgo">("all");
   const [branchNameFilter, setBranchNameFilter] = useState<string>("all");
   const [programFilter, setProgramFilter] = useState<string>("all");
+  const [adCodeFilter, setAdCodeFilter] = useState<string>("");
+  const [showComparison, setShowComparison] = useState<boolean>(false);
+  const [comparisonPeriod, setComparisonPeriod] = useState<{ since: string; until: string } | null>(null);
   const [tableSort, setTableSort] = useState<{ col: string; dir: "asc" | "desc" }>({ col: "spend", dir: "desc" });
   const [customSince, setCustomSince] = useState("");
   const [customUntil, setCustomUntil] = useState("");
@@ -124,24 +177,16 @@ export default function Dashboard() {
     const bf = params.get("bf") as "all" | "class" | "classgo";
     const bnf = params.get("bnf");
     const pf = params.get("pf");
+    const ac = params.get("adcode") || params.get("code");
+    const cmp = params.get("compare");
 
-    if (d) {
-      // URL hydration intentionally updates local state after mount.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setDatePreset(d);
-    }
-    if (t && ["branch", "program", "creative"].includes(t)) {
-      setTab(t);
-    }
-    if (bf && ["all", "class", "classgo"].includes(bf)) {
-      setBranchFilter(bf);
-    }
-    if (bnf) {
-      setBranchNameFilter(bnf);
-    }
-    if (pf) {
-      setProgramFilter(pf);
-    }
+    if (d) setDatePreset(d);
+    if (t && ["branch", "program", "creative"].includes(t)) setTab(t);
+    if (bf && ["all", "class", "classgo"].includes(bf)) setBranchFilter(bf);
+    if (bnf) setBranchNameFilter(bnf);
+    if (pf) setProgramFilter(pf);
+    if (ac) setAdCodeFilter(ac);
+    if (cmp === "1" || cmp === "true") setShowComparison(true);
   }, []);
 
   // Update URL Search Params when active filters change
@@ -161,6 +206,8 @@ export default function Dashboard() {
     sync("bf", branchFilter, "all");
     sync("bnf", branchNameFilter, "all");
     sync("pf", programFilter, "all");
+    sync("adcode", adCodeFilter, "");
+    sync("compare", showComparison ? "1" : "", "");
 
     const newSearch = params.toString();
     const currentSearch = window.location.search.replace(/^\?/, "");
@@ -168,7 +215,7 @@ export default function Dashboard() {
       const newUrl = `${window.location.pathname}${newSearch ? "?" + newSearch : ""}`;
       window.history.replaceState({ ...window.history.state, as: newUrl, url: newUrl }, "", newUrl);
     }
-  }, [datePreset, tab, branchFilter, branchNameFilter, programFilter]);
+  }, [datePreset, tab, branchFilter, branchNameFilter, programFilter, adCodeFilter, showComparison]);
 
   const handleTableSort = (col: string) => {
     setTableSort((prev) => prev.col === col ? { col, dir: prev.dir === "desc" ? "asc" : "desc" } : { col, dir: col === "cpi" || col === "cpl" ? "asc" : "desc" });
@@ -178,6 +225,7 @@ export default function Dashboard() {
     setBranchFilter("all");
     setBranchNameFilter("all");
     setProgramFilter("all");
+    setAdCodeFilter("");
     setExcludedBranches(new Set());
   };
 
@@ -193,11 +241,12 @@ export default function Dashboard() {
       try {
         const cached = sessionStorage.getItem(cacheKey);
         if (cached) {
-          const { data, prevData, failures, fetchedAt, ts } = JSON.parse(cached);
+          const { data, prevData, failures, fetchedAt, periods, ts } = JSON.parse(cached);
           if (Date.now() - ts < 15 * 60 * 1000) {
             setInsights(data || []);
             setPrevInsights(prevData || []);
             setFetchFailures(failures || []);
+            if (periods?.comparison) setComparisonPeriod(periods.comparison);
             setServerCacheHit(true);
             setLastUpdated(new Date(fetchedAt || ts));
             return;
@@ -227,10 +276,11 @@ export default function Dashboard() {
       setInsights(current);
       setPrevInsights(prev);
       setFetchFailures(failures);
+      if (data.periods?.comparison) setComparisonPeriod(data.periods.comparison);
       setServerCacheHit(Boolean(data.cache?.hit));
       setLastUpdated(new Date(fetchedAt));
       try {
-        sessionStorage.setItem(cacheKey, JSON.stringify({ data: current, prevData: prev, failures, fetchedAt, ts: Date.now() }));
+        sessionStorage.setItem(cacheKey, JSON.stringify({ data: current, prevData: prev, failures, fetchedAt, periods: data.periods, ts: Date.now() }));
       } catch {}
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
@@ -273,8 +323,19 @@ export default function Dashboard() {
   const [showAllCritical, setShowAllCritical] = useState(false);
   const [criticalPanelCollapsed, setCriticalPanelCollapsed] = useState(false);
 
+  const filterByAdCode = (i: AdInsight) => {
+    if (!adCodeFilter.trim()) return true;
+    const q = adCodeFilter.trim().toLowerCase();
+    const aw = (i.parsed.awCode || "").toLowerCase();
+    const cid = (i.parsed.creativeId || "").toLowerCase();
+    const name = (i.adName || "").toLowerCase();
+    const sc = (i.parsed.serviceCode || "").toLowerCase();
+    return aw.includes(q) || cid.includes(q) || name.includes(q) || sc.includes(q);
+  };
+
   const filteredInsights = insights.filter((i) => {
     const b = i.parsed.branch || "";
+    if (!filterByAdCode(i)) return false;
     // Exclude user-hidden branches
     if (excludedBranches.size > 0 && excludedBranches.has(b)) return false;
     if (!showTestBranches && testBranchNames.has(b)) return false;
@@ -299,6 +360,7 @@ export default function Dashboard() {
 
   const filteredPrevInsights = prevInsights.filter((i) => {
     const b = i.parsed.branch || "";
+    if (!filterByAdCode(i)) return false;
     // Exclude user-hidden branches
     if (excludedBranches.size > 0 && excludedBranches.has(b)) return false;
     if (!showTestBranches && testBranchNames.has(b)) return false;
@@ -320,6 +382,7 @@ export default function Dashboard() {
     }
     return true;
   });
+
 
   const programOptions = [...new Set(insights.map((i) => i.parsed.programCode).filter(Boolean))]
     .sort()
@@ -364,7 +427,7 @@ export default function Dashboard() {
   const bestCPI = findBestCost(costRows, "inbox");
   const bestCPL = findBestCost(costRows, "leads");
 
-  const rawChartData = groupBy(filteredInsights, tab);
+  const rawChartData = groupByWithPrev(filteredInsights, filteredPrevInsights, tab);
   const chartData = [...rawChartData].sort((a, b) => {
     const col = tableSort.col as keyof GroupedRow;
     const av = col === "name" ? (a.name as string) : (a[col] as number) ?? 0;
@@ -390,7 +453,14 @@ export default function Dashboard() {
       <div className="border-b border-gray-800 bg-gray-900 px-4 sm:px-6 py-3 sm:py-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h1 className="text-xl font-bold text-white">Meta Ads Dashboard</h1>
+            <h1 className="text-xl font-bold text-white flex items-center gap-2">
+              Meta Ads Dashboard
+              {comparisonPeriod && (
+                <span className="text-xs font-normal text-amber-300/90 bg-amber-950/60 border border-amber-800/60 px-2.5 py-0.5 rounded-full">
+                  vs {comparisonPeriod.since} ถึง {comparisonPeriod.until}
+                </span>
+              )}
+            </h1>
             {lastUpdated && (
               <p className="text-xs text-gray-400 mt-0.5">
                 อัปเดตข้อมูล: {lastUpdated.toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok" })}
@@ -672,12 +742,14 @@ export default function Dashboard() {
         <KpiCards
           insights={filteredInsights}
           prevInsights={filteredPrevInsights}
+          showComparison={showComparison}
           filterSummary={
             [
+              adCodeFilter ? `Code: "${adCodeFilter}"` : "",
               branchFilter === "class" ? "Class" : branchFilter === "classgo" ? "Class Go" : "ทุกกลุ่ม",
               programFilter !== "all" ? PROGRAM_MAP[programFilter] || programFilter : "ทุกโปรแกรม",
               branchNameFilter !== "all" ? branchNameFilter : "ทุกสาขา",
-            ].join(" / ")
+            ].filter(Boolean).join(" / ")
           }
         />
 
@@ -762,6 +834,10 @@ export default function Dashboard() {
               programFilter={programFilter}
               onProgramFilter={setProgramFilter}
               programOptions={programOptions}
+              adCodeFilter={adCodeFilter}
+              onAdCodeFilter={setAdCodeFilter}
+              showComparison={showComparison}
+              onToggleComparison={setShowComparison}
               onClear={handleClearFilters}
               excludedBranches={excludedBranches}
               onExcludedBranches={setExcludedBranches}
@@ -828,6 +904,7 @@ export default function Dashboard() {
                 tab={tab}
                 sort={tableSort}
                 onSort={handleTableSort}
+                showComparison={showComparison}
                 onProgramDrill={(name) => {
                   const code = Object.entries(PROGRAM_MAP).find(([, v]) => v === name)?.[0] || "all";
                   setProgramFilter(code);
@@ -843,10 +920,11 @@ export default function Dashboard() {
       <div className="fixed bottom-4 right-4 sm:hidden z-20">
         <div className="px-3 py-2 rounded-lg bg-slate-900/90 border border-slate-700 text-[11px] text-slate-200 shadow-lg shadow-black/30">
           {[
+            adCodeFilter ? `Code: "${adCodeFilter}"` : "",
             branchFilter === "class" ? "Class" : branchFilter === "classgo" ? "Class Go" : "ทุกกลุ่ม",
             programFilter !== "all" ? PROGRAM_MAP[programFilter] || programFilter : "ทุกโปรแกรม",
             branchNameFilter !== "all" ? branchNameFilter : "ทุกสาขา",
-          ].join(" / ")}
+          ].filter(Boolean).join(" / ")}
         </div>
       </div>
     </div>

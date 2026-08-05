@@ -9,6 +9,7 @@ interface Props {
   sort: { col: string; dir: "asc" | "desc" };
   onSort: (col: string) => void;
   onProgramDrill?: (name: string) => void;
+  showComparison?: boolean;
 }
 
 function fmt(n: number) {
@@ -20,9 +21,26 @@ function fmtB(n: number) {
   return `฿${n.toFixed(0)}`;
 }
 
+function renderDiffBadge(current: number, previous?: number, lowerIsBetter = false) {
+  if (previous === undefined || previous === 0) return null;
+  const pct = ((current - previous) / previous) * 100;
+  if (Math.abs(pct) < 0.1) return null;
+  const isPos = pct > 0;
+  const color = isPos
+    ? (lowerIsBetter ? "text-rose-400" : "text-emerald-400")
+    : (lowerIsBetter ? "text-emerald-400" : "text-rose-400");
+  const sign = isPos ? "+" : "";
+  const arrow = isPos ? "▲" : "▼";
+  return (
+    <span className={`text-[10px] font-semibold ${color} ml-1`}>
+      {arrow}{sign}{pct.toFixed(0)}%
+    </span>
+  );
+}
+
 const columns = ["name", "spend", "impressions", "inbox", "cpi", "leads", "cpl"] as const;
 
-export default function SortableMetricTable({ rows, tab, sort, onSort, onProgramDrill }: Props) {
+export default function SortableMetricTable({ rows, tab, sort, onSort, onProgramDrill, showComparison = false }: Props) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs sm:text-sm">
@@ -77,12 +95,70 @@ export default function SortableMetricTable({ rows, tab, sort, onSort, onProgram
                   {tab === "program" && <span className="ml-1 text-indigo-400 text-[10px] sm:text-xs">→</span>}
                 </span>
               </td>
-              <td className="py-2 px-2 sm:px-3 text-right font-medium text-emerald-400">{fmtB(row.spend)}</td>
-              <td className="py-2 px-2 sm:px-3 text-right text-gray-300">{fmt(row.impressions)}</td>
-              <td className="py-2 px-2 sm:px-3 text-right text-gray-300">{fmt(row.inbox)}</td>
-              <td className="py-2 px-2 sm:px-3 text-right text-gray-300">{row.inbox > 0 ? `฿${row.cpi.toFixed(0)}` : "-"}</td>
-              <td className="py-2 px-2 sm:px-3 text-right text-gray-300">{fmt(row.leads)}</td>
-              <td className="py-2 px-2 sm:px-3 text-right text-gray-300">{row.leads > 0 ? `฿${row.cpl.toFixed(0)}` : "-"}</td>
+              {/* Spend */}
+              <td className="py-2 px-2 sm:px-3 text-right">
+                <div className="font-medium text-emerald-400">
+                  {fmtB(row.spend)}
+                  {showComparison && renderDiffBadge(row.spend, row.prevSpend)}
+                </div>
+                {showComparison && row.prevSpend !== undefined && (
+                  <div className="text-[10px] text-slate-500">ช่วงก่อน: {fmtB(row.prevSpend)}</div>
+                )}
+              </td>
+              {/* Impressions */}
+              <td className="py-2 px-2 sm:px-3 text-right">
+                <div className="text-gray-300">
+                  {fmt(row.impressions)}
+                  {showComparison && renderDiffBadge(row.impressions, row.prevImpressions)}
+                </div>
+                {showComparison && row.prevImpressions !== undefined && (
+                  <div className="text-[10px] text-slate-500">ช่วงก่อน: {fmt(row.prevImpressions)}</div>
+                )}
+              </td>
+              {/* Inbox */}
+              <td className="py-2 px-2 sm:px-3 text-right">
+                <div className="text-gray-300">
+                  {fmt(row.inbox)}
+                  {showComparison && renderDiffBadge(row.inbox, row.prevInbox)}
+                </div>
+                {showComparison && row.prevInbox !== undefined && (
+                  <div className="text-[10px] text-slate-500">ช่วงก่อน: {fmt(row.prevInbox)}</div>
+                )}
+              </td>
+              {/* CPI */}
+              <td className="py-2 px-2 sm:px-3 text-right">
+                <div className="text-gray-300">
+                  {row.inbox > 0 ? `฿${row.cpi.toFixed(0)}` : "-"}
+                  {showComparison && row.inbox > 0 && row.prevCpi ? renderDiffBadge(row.cpi, row.prevCpi, true) : null}
+                </div>
+                {showComparison && row.prevCpi !== undefined && (
+                  <div className="text-[10px] text-slate-500">
+                    ช่วงก่อน: {row.prevInbox && row.prevInbox > 0 ? `฿${row.prevCpi.toFixed(0)}` : "-"}
+                  </div>
+                )}
+              </td>
+              {/* Leads */}
+              <td className="py-2 px-2 sm:px-3 text-right">
+                <div className="text-gray-300">
+                  {fmt(row.leads)}
+                  {showComparison && renderDiffBadge(row.leads, row.prevLeads)}
+                </div>
+                {showComparison && row.prevLeads !== undefined && (
+                  <div className="text-[10px] text-slate-500">ช่วงก่อน: {fmt(row.prevLeads)}</div>
+                )}
+              </td>
+              {/* CPL */}
+              <td className="py-2 px-2 sm:px-3 text-right">
+                <div className="text-gray-300">
+                  {row.leads > 0 ? `฿${row.cpl.toFixed(0)}` : "-"}
+                  {showComparison && row.leads > 0 && row.prevCpl ? renderDiffBadge(row.cpl, row.prevCpl, true) : null}
+                </div>
+                {showComparison && row.prevCpl !== undefined && (
+                  <div className="text-[10px] text-slate-500">
+                    ช่วงก่อน: {row.prevLeads && row.prevLeads > 0 ? `฿${row.prevCpl.toFixed(0)}` : "-"}
+                  </div>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -90,3 +166,4 @@ export default function SortableMetricTable({ rows, tab, sort, onSort, onProgram
     </div>
   );
 }
+

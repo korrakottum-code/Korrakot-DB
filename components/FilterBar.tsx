@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, X, EyeOff } from "lucide-react";
+import { ChevronDown, X, EyeOff, Search, ArrowLeftRight } from "lucide-react";
 import type { TabKey } from "./types";
 
 interface Props {
@@ -14,11 +14,16 @@ interface Props {
   programFilter: string;
   onProgramFilter: (v: string) => void;
   programOptions: { code: string; label: string }[];
+  adCodeFilter: string;
+  onAdCodeFilter: (v: string) => void;
+  showComparison: boolean;
+  onToggleComparison: (v: boolean) => void;
   onClear: () => void;
   excludedBranches: Set<string>;
   onExcludedBranches: (v: Set<string>) => void;
   allBranchNames: string[];
 }
+
 
 function BranchDropdown({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -283,6 +288,10 @@ export default function FilterBar({
   programFilter,
   onProgramFilter,
   programOptions,
+  adCodeFilter,
+  onAdCodeFilter,
+  showComparison,
+  onToggleComparison,
   onClear,
   excludedBranches,
   onExcludedBranches,
@@ -294,25 +303,49 @@ export default function FilterBar({
 
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm bg-slate-900/60 border border-slate-800 rounded-xl px-3 py-2.5">
+      {/* Code แอด filter */}
+      <div className="relative flex items-center">
+        <Search className="w-3.5 h-3.5 absolute left-2.5 text-slate-400 pointer-events-none" />
+        <input
+          type="text"
+          value={adCodeFilter}
+          onChange={(e) => onAdCodeFilter(e.target.value)}
+          placeholder="ค้นหา Code แอด (เช่น PB02, 0001)..."
+          className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg pl-8 pr-7 py-1.5 focus:outline-none focus:border-indigo-500 min-w-[170px] sm:min-w-[210px] placeholder:text-slate-500"
+        />
+        {adCodeFilter && (
+          <button
+            onClick={() => onAdCodeFilter("")}
+            className="absolute right-2 text-slate-400 hover:text-white p-0.5"
+            title="ล้างคำค้นหา"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+
       {showBranchGroup && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {(["all", "class", "classgo"] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => onBranchFilter(f)}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-colors border ${
-                branchFilter === f
-                  ? "bg-teal-600 text-white border-teal-500"
-                  : "text-slate-300 border-slate-700 hover:text-white hover:bg-slate-800 hover:border-slate-600"
-              }`}
-            >
-              {f === "all" ? "ทั้งหมด" : f === "class" ? "Class" : "Class Go"}
-            </button>
-          ))}
-          {showBranchSelect && (
-            <BranchDropdown value={branchName} options={branchOptions} onChange={onBranchName} />
-          )}
-        </div>
+        <>
+          <span className="text-slate-700 mx-0.5 hidden sm:inline">|</span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(["all", "class", "classgo"] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => onBranchFilter(f)}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors border ${
+                  branchFilter === f
+                    ? "bg-teal-600 text-white border-teal-500"
+                    : "text-slate-300 border-slate-700 hover:text-white hover:bg-slate-800 hover:border-slate-600"
+                }`}
+              >
+                {f === "all" ? "ทั้งหมด" : f === "class" ? "Class" : "Class Go"}
+              </button>
+            ))}
+            {showBranchSelect && (
+              <BranchDropdown value={branchName} options={branchOptions} onChange={onBranchName} />
+            )}
+          </div>
+        </>
       )}
 
       {showProgramButtons && (
@@ -352,6 +385,22 @@ export default function FilterBar({
         excluded={excludedBranches}
         onChange={onExcludedBranches}
       />
+
+      <span className="text-slate-700 mx-0.5">|</span>
+      {/* Comparison Toggle Button */}
+      <button
+        onClick={() => onToggleComparison(!showComparison)}
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-colors border ${
+          showComparison
+            ? "bg-amber-600/20 text-amber-300 border-amber-500/50 shadow-sm shadow-amber-900/30"
+            : "text-slate-300 border-slate-700 hover:text-white hover:bg-slate-800 hover:border-slate-600"
+        }`}
+        title="เปิด/ปิดการแสดงเปรียบเทียบกับช่วงเวลาที่แล้ว"
+      >
+        <ArrowLeftRight className="w-3.5 h-3.5" />
+        <span>เปรียบเทียบช่วงก่อน</span>
+      </button>
+
       <span className="text-slate-700 mx-0.5">|</span>
       <button
         onClick={onClear}
@@ -362,3 +411,4 @@ export default function FilterBar({
     </div>
   );
 }
+

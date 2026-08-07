@@ -4,6 +4,7 @@ import {
   getSyncMeta,
   isRecentWindowFresh,
   markSynced,
+  recordSyncChangeStats,
   setSyncMeta,
   splitDateRange,
   upsertAdNames,
@@ -96,9 +97,16 @@ export async function syncRecentDates(
 
   const run = (async () => {
     const { rows, accounts, failures } = await fetchDailyMetrics(token, since, until);
+    const swept = sweptAccountIds(accounts, failures);
+    // เก็บสถิติ "วันอายุเท่านี้ยังเปลี่ยนจริงไหม" ก่อนทับของเก่า — ใช้เป็นหลักฐาน
+    // หด SETTLING_WINDOW_DAYS ในอนาคต (ดูสรุป: npm run sync-change-stats)
+    try {
+      await recordSyncChangeStats(rows, swept, recentDates, new Date());
+    } catch (err) {
+      console.warn("[sync-change-stats] failed:", err instanceof Error ? err.message : err);
+    }
     await upsertDailyMetrics(rows);
     await upsertAdNames(adNamesFromRows(rows));
-    const swept = sweptAccountIds(accounts, failures);
     await Promise.all(swept.map((id) => markSynced(id, recentDates)));
     return failures;
   })();

@@ -1,4 +1,6 @@
 import { Pool } from "pg";
+import { toZonedTime } from "date-fns-tz";
+import { REPORTING_TIMEZONE } from "./reporting";
 
 /**
  * Persistent, incremental cache for Meta Ads daily insights.
@@ -203,6 +205,126 @@ export async function recentWindowState(accountIds: string[], recentDates: strin
 /** true เมื่อทุกคู่ (account, date) ของช่วง recent ถูก sync ภายใน maxAgeMs — ใช้ข้ามการยิง Meta ซ้ำเมื่อสลับ preset */
 export async function isRecentWindowFresh(accountIds: string[], recentDates: string[], maxAgeMs: number): Promise<boolean> {
   return (await recentWindowState(accountIds, recentDates, maxAgeMs)).fresh;
+}
+
+export interface DailyAggregate {
+  rowCount: number;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  reach: number;
+  inbox: number;
+  leads: number;
+}
+
+/** รวมยอดต่อ (บัญชี, วัน) — คีย์ `${accountId}|${date}` */
+export function aggregateByAccountDate(rows: DailyMetricRow[]): Map<string, DailyAggregate> {
+  const map = new Map<string, DailyAggregate>();
+  for (const row of rows) {
+    const key = `${row.accountId}|${row.date}`;
+    const agg = map.get(key) || { rowCount: 0, spend: 0, impressions: 0, clicks: 0, reach: 0, inbox: 0, leads: 0 };
+    agg.rowCount += 1;
+    agg.spend += row.spend;
+    agg.impressions += row.impressions;
+    agg.clicks += row.clicks;
+    agg.reach += row.reach;
+    agg.inbox += row.inbox;
+    agg.leads += row.leads;
+    map.set(key, agg);
+  }
+  return map;
+}
+
+/** ยอดรวมสองฝั่งต่างกันจริงไหม (ไม่มีข้อมูล = ศูนย์ทั้งชุด, spend เทียบด้วย epsilon กัน float เพี้ยน) */
+export function aggregatesDiffer(a: DailyAggregate | undefined, b: DailyAggregate | undefined): boolean {
+  const zero: DailyAggregate = { rowCount: 0, spend: 0, impressions: 0, clicks: 0, reach: 0, inbox: 0, leads: 0 };
+  const left = a || zero;
+  const right = b || zero;
+  return (
+    left.rowCount !== right.rowCount ||
+    Math.abs(left.spend - right.spend) > 0.01 ||
+    left.impressions !== right.impressions ||
+    left.clicks !== right.clicks ||
+    left.reach !== right.reach ||
+    left.inbox !== right.inbox ||
+    left.leads !== right.leads
+  );
+}
+
+/**
+ * บันทึกสถิติ "วันอายุ N วัน ตัวเลขยังเปลี่ยนจริงไหม" ก่อน upsert ทับช่วง recent —
+ * นับเฉพาะคู่ (บัญชี, วัน) ที่เคย sync แล้ว (ครั้งแรกไม่ใช่หลักฐานการเปลี่ยน)
+ * ต้องเรียกก่อน upsertDailyMetrics ไม่งั้นของเก่าถูกทับหายก่อนได้เทียบ
+ */
+export async function recordSyncChangeStats(
+  fetchedRows: DailyMetricRow[],
+  accountIds: string[],
+  dates: string[],
+  asOf: Date
+): Promise<void> {
+  if (dates.length === 0 || accountIds.length === 0) return;
+  const db = getPool();
+
+  const { rows: markedRows } = await db.query<{ accountId: string; date: string }>(
+    `select account_id as "accountId", date::text as date from ad_sync_progress
+     where account_id = any($1::text[]) and date = any($2::date[])`,
+    [accountIds, dates]
+  );
+  if (markedRows.length === 0) return;
+
+  const { rows: storedRows } = await db.query<{
+    accountId: string; date: string; rowCount: number;
+    spend: number; impressions: number; clicks: number; reach: number; inbox: number; leads: number;
+  }>(
+    `select account_id as "accountId", date::text as date, count(*)::int as "rowCount",
+            coalesce(sum(spend), 0)::float8 as spend,
+            coalesce(sum(impressions), 0)::float8 as impressions,
+            coalesce(sum(clicks), 0)::float8 as clicks,
+            coalesce(sum(reach), 0)::float8 as reach,
+            coalesce(sum(inbox), 0)::float8 as inbox,
+            coalesce(sum(leads), 0)::float8 as leads
+     from ad_daily_metrics
+     where account_id = any($1::text[]) and date = any($2::date[])
+     group by account_id, date`,
+    [accountIds, dates]
+  );
+  const storedByKey = new Map<string, DailyAggregate>(
+    storedRows.map((r) => [`${r.accountId}|${r.date}`, {
+      rowCount: r.rowCount, spend: r.spend, impressions: r.impressions,
+      clicks: r.clicks, reach: r.reach, inbox: r.inbox, leads: r.leads,
+    }])
+  );
+  const fetchedByKey = aggregateByAccountDate(fetchedRows);
+
+  // อายุวันคิดตามเขตเวลารายงาน (Asia/Bangkok) — ถ้าใช้ UTC ช่วงเที่ยงคืน-เจ็ดโมงเช้าไทย
+  // เมื่อวานจะถูกนับเป็นอายุ 0 ปนกับวันนี้
+  const zoned = toZonedTime(asOf, REPORTING_TIMEZONE);
+  const todayMs = Date.UTC(zoned.getFullYear(), zoned.getMonth(), zoned.getDate());
+  const observedByAge = new Map<number, { observed: number; changed: number }>();
+  for (const pair of markedRows) {
+    const age = Math.max(0, Math.round((todayMs - parseDateUTC(pair.date).getTime()) / 86_400_000));
+    const key = `${pair.accountId}|${pair.date}`;
+    const bucket = observedByAge.get(age) || { observed: 0, changed: 0 };
+    bucket.observed += 1;
+    if (aggregatesDiffer(storedByKey.get(key), fetchedByKey.get(key))) bucket.changed += 1;
+    observedByAge.set(age, bucket);
+  }
+  if (observedByAge.size === 0) return;
+
+  const values: unknown[] = [];
+  const placeholders = [...observedByAge.entries()].map(([age, b], i) => {
+    values.push(age, b.observed, b.changed);
+    return `($${i * 3 + 1}, $${i * 3 + 2}, $${i * 3 + 3}, now())`;
+  });
+  await db.query(
+    `insert into sync_change_stats (age_days, observed, changed, last_observed_at)
+     values ${placeholders.join(",")}
+     on conflict (age_days) do update set
+       observed = sync_change_stats.observed + excluded.observed,
+       changed = sync_change_stats.changed + excluded.changed,
+       last_observed_at = now()`,
+    values
+  );
 }
 
 export async function getSyncMeta(key: string): Promise<number | null> {

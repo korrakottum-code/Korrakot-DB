@@ -16,7 +16,7 @@ import {
   sumReportingRows,
 } from "@/lib/reporting";
 import { createSnapshotId } from "@/lib/report-export";
-import { getEffectiveSettlingWindow, readInsightRows, recentWindowState, splitDateRange } from "@/lib/insights-store";
+import { getEffectiveSettlingWindow, logSyncError, readInsightRows, recentWindowState, splitDateRange } from "@/lib/insights-store";
 import { ensureDailyAdNameSweep, RECENT_SYNC_MAX_AGE_MS, syncRange } from "@/lib/insights-sync";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -149,7 +149,9 @@ export async function GET(req: NextRequest) {
       try {
         await ensureDailyAdNameSweep(tokens);
       } catch (err) {
-        console.warn("[ad-name-sweep] failed:", err instanceof Error ? err.message : err);
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn("[ad-name-sweep] failed:", message);
+        await logSyncError("ad-name-sweep", message);
       }
     });
 
@@ -165,7 +167,9 @@ export async function GET(req: NextRequest) {
           // ให้ request ถัดไปประกอบคำตอบจากตัวเลขที่เพิ่ง sync แทนค่าเก่าใน cache
           deleteServerCache(cacheKey);
         } catch (err) {
-          console.warn("[background-sync] failed:", err instanceof Error ? err.message : err);
+          const message = err instanceof Error ? err.message : String(err);
+          console.warn("[background-sync] failed:", message);
+          await logSyncError(`background-sync ${cacheKey}`, message);
         }
       });
     }

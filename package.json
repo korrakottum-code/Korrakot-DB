@@ -12,7 +12,8 @@
     "refresh-checklist": "npx --yes tsx scripts/refresh-checklist.ts",
     "migrate-insights-db": "npx --yes tsx scripts/migrate-insights-db.ts",
     "backfill-insights": "npx --yes tsx scripts/backfill-insights.ts",
-    "sync-change-stats": "npx --yes tsx scripts/sync-change-stats.ts"
+    "sync-change-stats": "npx --yes tsx scripts/sync-change-stats.ts",
+    "sync-errors": "npx --yes tsx scripts/sync-errors.ts"
   },
   "dependencies": {
     "date-fns": "^4.3.0",

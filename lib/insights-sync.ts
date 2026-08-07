@@ -3,6 +3,7 @@ import {
   findMissingFinalRanges,
   getSyncMeta,
   isRecentWindowFresh,
+  logSyncFailures,
   markSynced,
   recordSyncChangeStats,
   setSyncMeta,
@@ -77,6 +78,8 @@ export async function syncFinalDates(
   // mark เฉพาะบัญชีที่ token นี้กวาดสำเร็จจริง — บัญชีที่พังหรืออยู่กับ token อื่นยังถือว่าไม่ sync
   await Promise.all(swept.map((id) => markSynced(id, gapDates)));
 
+  // เก็บ failure ลง log ถาวรเสมอ — ตอนรันเบื้องหลังไม่มีหน้าจอให้แสดง ถ้าไม่เก็บจะหายเงียบ
+  await logSyncFailures(`final-sync ${gapSince}..${gapUntil}`, failures);
   return failures;
 }
 
@@ -120,6 +123,7 @@ export async function syncRecentDates(
     await upsertDailyMetrics(rows);
     await upsertAdNames(adNamesFromRows(rows));
     await Promise.all(swept.map((id) => markSynced(id, recentDates)));
+    await logSyncFailures(`recent-sync ${since}..${until}`, failures);
     return failures;
   })();
   inFlightRecentSync.set(flightKey, run);
@@ -164,9 +168,7 @@ export async function ensureDailyAdNameSweep(tokens: string[]): Promise<FetchFai
   const results = await Promise.all(tokens.map((token) => fetchAdNames(token)));
   await upsertAdNames(results.flatMap((r) => r.rows));
   const failures = results.flatMap((r) => r.failures);
-  // รันเบื้องหลังหลังส่งคำตอบไปแล้ว — ไม่มีที่ให้แสดงบนหน้าเว็บ จึงบันทึกลง log ฝั่งเซิร์ฟเวอร์
-  for (const f of failures) {
-    console.warn(`[ad-name-sweep] ${f.accountName || f.accountId || f.scope}: ${f.message}`);
-  }
+  // รันเบื้องหลังหลังส่งคำตอบไปแล้ว — ไม่มีที่ให้แสดงบนหน้าเว็บ จึงเก็บลง log ถาวร
+  await logSyncFailures("ad-name-sweep", failures);
   return failures;
 }

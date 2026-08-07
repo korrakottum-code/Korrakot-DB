@@ -400,6 +400,61 @@ export async function getEffectiveSettlingWindow(): Promise<number> {
   return value;
 }
 
+export interface SyncErrorEntry {
+  occurredAt: string;
+  source: string;
+  accountId: string | null;
+  accountName: string | null;
+  message: string;
+}
+
+const ERROR_LOG_RETENTION_DAYS = 30;
+
+/**
+ * บันทึก error จากงานเบื้องหลังลง DB — ห้าม throw เด็ดขาดเพราะถูกเรียกใน error path
+ * (ถ้า DB เองล่มก็ได้แค่ลง console) และแอบลบของเก่าเกิน 30 วันเป็นครั้งคราว
+ */
+export async function logSyncError(
+  source: string,
+  message: string,
+  context: { accountId?: string; accountName?: string } = {}
+): Promise<void> {
+  try {
+    await getPool().query(
+      `insert into sync_error_log (source, account_id, account_name, message) values ($1, $2, $3, $4)`,
+      [source, context.accountId || null, context.accountName || null, message.slice(0, 2000)]
+    );
+    if (Math.random() < 0.02) {
+      await getPool().query(
+        `delete from sync_error_log where occurred_at < now() - interval '1 day' * $1`,
+        [ERROR_LOG_RETENTION_DAYS]
+      );
+    }
+  } catch (err) {
+    console.warn(`[sync-error-log] could not persist error (${source}: ${message}):`, err instanceof Error ? err.message : err);
+  }
+}
+
+/** บันทึก failure รายบัญชีจากการดึง Meta เป็นชุด */
+export async function logSyncFailures(
+  source: string,
+  failures: Array<{ accountId?: string; accountName?: string; message: string }>
+): Promise<void> {
+  for (const failure of failures) {
+    await logSyncError(source, failure.message, { accountId: failure.accountId, accountName: failure.accountName });
+  }
+}
+
+export async function readSyncErrors(limit = 100): Promise<SyncErrorEntry[]> {
+  const { rows } = await getPool().query<SyncErrorEntry>(
+    `select occurred_at::text as "occurredAt", source, account_id as "accountId",
+            account_name as "accountName", message
+     from sync_error_log order by occurred_at desc limit $1`,
+    [Math.min(Math.max(limit, 1), 500)]
+  );
+  return rows;
+}
+
 export async function getSyncMeta(key: string): Promise<number | null> {
   const { rows } = await getPool().query<{ ms: string }>(
     `select (extract(epoch from updated_at) * 1000)::bigint::text as ms from sync_meta where key = $1`,

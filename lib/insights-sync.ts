@@ -48,21 +48,33 @@ function adNamesFromRows(rows: DailyMetricRow[]): AdNameRow[] {
  * cache forever). Shared by the live insights API route and the standalone
  * backfill script (scripts/backfill-insights.ts) so both stay in sync.
  */
-export async function syncFinalDates(token: string, accountIds: string[], finalDates: string[]): Promise<FetchFailure[]> {
+export async function syncFinalDates(
+  token: string,
+  accountIds: string[],
+  finalDates: string[],
+  settlingWindowDays?: number
+): Promise<FetchFailure[]> {
   if (finalDates.length === 0 || accountIds.length === 0) return [];
 
-  const gapRanges = await findMissingFinalRanges(accountIds, finalDates);
+  const gapRanges = await findMissingFinalRanges(accountIds, finalDates, settlingWindowDays);
   if (gapRanges.length === 0) return [];
 
   const gapSince = gapRanges[0].since;
   const gapUntil = gapRanges[gapRanges.length - 1].until;
 
   const { rows, accounts, failures } = await fetchDailyMetrics(token, gapSince, gapUntil);
+  const gapDates = finalDates.filter((d) => d >= gapSince && d <= gapUntil);
+  const swept = sweptAccountIds(accounts, failures);
+  // การ fetch รอบสุดท้ายตอนวันพ้นหน้าต่าง = เซนเซอร์ที่ขอบของระบบหน้าต่างอัตโนมัติ:
+  // ถ้าตัวเลขขอบยังขยับบ่อย สถิติจะดันหน้าต่างให้กว้างกลับเอง (ดู getEffectiveSettlingWindow)
+  try {
+    await recordSyncChangeStats(rows, swept, gapDates, new Date());
+  } catch (err) {
+    console.warn("[sync-change-stats] failed:", err instanceof Error ? err.message : err);
+  }
   await upsertDailyMetrics(rows);
   await upsertAdNames(adNamesFromRows(rows));
   // mark เฉพาะบัญชีที่ token นี้กวาดสำเร็จจริง — บัญชีที่พังหรืออยู่กับ token อื่นยังถือว่าไม่ sync
-  const gapDates = finalDates.filter((d) => d >= gapSince && d <= gapUntil);
-  const swept = sweptAccountIds(accounts, failures);
   await Promise.all(swept.map((id) => markSynced(id, gapDates)));
 
   return failures;
@@ -125,11 +137,11 @@ export async function syncRange(
   since: string,
   until: string,
   asOf: Date,
-  options: { forceRefresh?: boolean; skipRecent?: boolean } = {}
+  options: { forceRefresh?: boolean; skipRecent?: boolean; settlingWindowDays?: number } = {}
 ): Promise<FetchFailure[]> {
-  const { finalDates, recentDates } = splitDateRange(since, until, asOf);
+  const { finalDates, recentDates } = splitDateRange(since, until, asOf, options.settlingWindowDays);
   return [
-    ...(await syncFinalDates(token, accountIds, finalDates)),
+    ...(await syncFinalDates(token, accountIds, finalDates, options.settlingWindowDays)),
     // skipRecent = โหมดเสิร์ฟก่อน: ช่วง recent มีข้อมูลครบแต่เก่า จะถูก sync เบื้องหลังแทน
     ...(options.skipRecent ? [] : await syncRecentDates(token, accountIds, recentDates, options.forceRefresh)),
   ];

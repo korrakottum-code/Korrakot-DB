@@ -16,7 +16,7 @@ import {
   sumReportingRows,
 } from "@/lib/reporting";
 import { createSnapshotId } from "@/lib/report-export";
-import { readInsightRows, recentWindowState, splitDateRange } from "@/lib/insights-store";
+import { getEffectiveSettlingWindow, readInsightRows, recentWindowState, splitDateRange } from "@/lib/insights-store";
 import { ensureDailyAdNameSweep, RECENT_SYNC_MAX_AGE_MS, syncRange } from "@/lib/insights-sync";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -127,13 +127,17 @@ export async function GET(req: NextRequest) {
       ranges.previous.until,
     ].join(":");
 
+    // หน้าต่าง settling ปรับเองจากสถิติจริง (ทบทวนชั่วโมงละครั้ง) — เริ่มที่ 7 วัน
+    // และหดลงเมื่อสถิติยืนยันว่าวันอายุมากกว่านั้นไม่ขยับแล้ว ไม่ต้องมีคนมาปรับ
+    const settlingWindowDays = await getEffectiveSettlingWindow();
+
     // เสิร์ฟก่อน-อัปเดตทีหลัง: ถ้าช่วง recent มีข้อมูลครบแล้ว (แค่เก่าเกิน 10 นาที)
     // ตอบจาก DB ทันทีแล้วค่อย sync เบื้องหลัง — ทุกคลิกจึงจบใน 1-3 วิ
     // ต้องรอ sync จริงเฉพาะ: กดรีเฟรชเอง หรือช่วงที่ไม่เคยมีข้อมูลเลย (ครั้งแรกครั้งเดียว)
     const recentDatesUnion = [
       ...new Set([
-        ...splitDateRange(ranges.current.since, ranges.current.until, asOf).recentDates,
-        ...splitDateRange(ranges.previous.since, ranges.previous.until, asOf).recentDates,
+        ...splitDateRange(ranges.current.since, ranges.current.until, asOf, settlingWindowDays).recentDates,
+        ...splitDateRange(ranges.previous.since, ranges.previous.until, asOf, settlingWindowDays).recentDates,
       ]),
     ].sort();
     const recentState = await recentWindowState(accountIds, recentDatesUnion, RECENT_SYNC_MAX_AGE_MS);
@@ -154,8 +158,8 @@ export async function GET(req: NextRequest) {
         try {
           await Promise.all(
             tokens.flatMap((token) => [
-              syncRange(token, accountIds, ranges.current.since, ranges.current.until, asOf),
-              syncRange(token, accountIds, ranges.previous.since, ranges.previous.until, asOf),
+              syncRange(token, accountIds, ranges.current.since, ranges.current.until, asOf, { settlingWindowDays }),
+              syncRange(token, accountIds, ranges.previous.since, ranges.previous.until, asOf, { settlingWindowDays }),
             ])
           );
           // ให้ request ถัดไปประกอบคำตอบจากตัวเลขที่เพิ่ง sync แทนค่าเก่าใน cache
@@ -171,7 +175,7 @@ export async function GET(req: NextRequest) {
       // sync ทั้งสองช่วงพร้อมกัน: วันที่ final ที่ขาด + ช่วง recent ตามโหมดที่ตัดสินไว้ข้างบน
       // (ปกติทั้งคู่เป็น no-op → เหลือแค่อ่าน Postgres)
       // campaign metadata ไม่ผูกช่วงวันที่ — cache แยกต่อ token ใช้ร่วมกันทุก preset
-      const syncOptions = { forceRefresh, skipRecent: deferRecentSync };
+      const syncOptions = { forceRefresh, skipRecent: deferRecentSync, settlingWindowDays };
       const [currentSyncFailures, prevSyncFailures, campaignResults] = await Promise.all([
         Promise.all(tokens.map((token) => syncRange(token, accountIds, ranges.current.since, ranges.current.until, asOf, syncOptions))),
         Promise.all(tokens.map((token) => syncRange(token, accountIds, ranges.previous.since, ranges.previous.until, asOf, syncOptions))),
@@ -355,6 +359,8 @@ export async function GET(req: NextRequest) {
         stale: cached.stale === true,
         // ช่วง recent เก่าเกินเกณฑ์แต่เสิร์ฟไปก่อน — กำลัง sync เบื้องหลัง ให้ client แวะมาอ่านซ้ำ
         dataStale: deferRecentSync,
+        // หน้าต่างวันที่ยังถูก sync ซ้ำ (ปรับเองจากสถิติ) — โผล่ไว้ให้ตรวจสอบได้
+        settlingWindowDays,
       },
     });
   } catch (err: unknown) {

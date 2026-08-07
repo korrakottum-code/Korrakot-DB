@@ -22,6 +22,12 @@ import { REPORTING_TIMEZONE } from "./reporting";
  */
 
 export const SETTLING_WINDOW_DAYS = 7;
+/** หน้าต่างแคบสุดที่ยอมให้ระบบหดเองได้ — เมื่อวานต้องถูก sync ซ้ำเสมอ */
+export const MIN_SETTLING_WINDOW_DAYS = 2;
+/** ต้องสังเกตอย่างน้อยเท่านี้ต่อช่วงอายุ (~29 บัญชี × ~10 รอบ sync) ก่อนกล้าตัดสิน */
+const WINDOW_MIN_OBSERVATIONS = 300;
+/** อัตราการเปลี่ยนสูงสุดที่ยังถือว่า "นิ่งแล้ว" */
+const WINDOW_MAX_CHANGE_RATE = 0.01;
 const UPSERT_BATCH_SIZE = 500;
 
 function parseDateUTC(value: string): Date {
@@ -162,14 +168,18 @@ export interface StoredInsightRow {
  * was still "recent" holds numbers Meta could since have adjusted, so the date
  * must be fetched once more after it becomes final.
  */
-export async function findMissingFinalRanges(accountIds: string[], finalDates: string[]): Promise<DateRange[]> {
+export async function findMissingFinalRanges(
+  accountIds: string[],
+  finalDates: string[],
+  settlingWindowDays: number = SETTLING_WINDOW_DAYS
+): Promise<DateRange[]> {
   if (finalDates.length === 0 || accountIds.length === 0) return [];
   const { rows } = await getPool().query<{ accountId: string; date: string }>(
     `select account_id as "accountId", date::text as date
      from ad_sync_progress
      where account_id = any($1::text[]) and date = any($2::date[])
        and synced_at >= date + interval '1 day' * $3`,
-    [accountIds, finalDates, SETTLING_WINDOW_DAYS + 1]
+    [accountIds, finalDates, settlingWindowDays + 1]
   );
   const synced = new Set(rows.map((r) => `${r.accountId}|${r.date}`));
   const missing = new Set<string>();
@@ -325,6 +335,69 @@ export async function recordSyncChangeStats(
        last_observed_at = now()`,
     values
   );
+}
+
+export interface AgeChangeStat {
+  ageDays: number;
+  observed: number;
+  changed: number;
+}
+
+/**
+ * เลือกหน้าต่าง settling ที่แคบสุดที่ปลอดภัยจากสถิติจริง: N ต่ำสุดที่ทุกช่วงอายุ
+ * ตั้งแต่ N ถึงเพดาน มีการสังเกตมากพอและอัตราเปลี่ยน ≤ เกณฑ์ — ข้อมูลไม่พอ = คงเพดานไว้
+ */
+export function pickSettlingWindow(
+  stats: AgeChangeStat[],
+  options: { min?: number; max?: number; minObserved?: number; maxChangeRate?: number } = {}
+): number {
+  const min = options.min ?? MIN_SETTLING_WINDOW_DAYS;
+  const max = options.max ?? SETTLING_WINDOW_DAYS;
+  const minObserved = options.minObserved ?? WINDOW_MIN_OBSERVATIONS;
+  const maxChangeRate = options.maxChangeRate ?? WINDOW_MAX_CHANGE_RATE;
+
+  const byAge = new Map(stats.map((s) => [s.ageDays, s]));
+  for (let candidate = min; candidate < max; candidate++) {
+    let allStable = true;
+    for (let age = candidate; age <= max; age++) {
+      const s = byAge.get(age);
+      if (!s || s.observed < minObserved || s.changed / s.observed > maxChangeRate) {
+        allStable = false;
+        break;
+      }
+    }
+    if (allStable) return candidate;
+  }
+  return max;
+}
+
+let effectiveWindowCache: { value: number; expiresAt: number } | null = null;
+const EFFECTIVE_WINDOW_CACHE_MS = 60 * 60 * 1000;
+
+/**
+ * หน้าต่าง settling ที่ใช้จริง — ระบบทบทวนจากสถิติเองชั่วโมงละครั้ง ไม่ต้องมีคนมาปรับ
+ * และ self-healing: การ fetch รอบสุดท้ายตอนวันข้ามพ้นหน้าต่างยังเก็บสถิติที่ขอบต่อเนื่อง
+ * ถ้าตัวเลขที่ขอบกลับมาขยับบ่อย หน้าต่างจะขยายกลับเป็นค่าเพดานเอง
+ */
+export async function getEffectiveSettlingWindow(): Promise<number> {
+  if (effectiveWindowCache && effectiveWindowCache.expiresAt > Date.now()) {
+    return effectiveWindowCache.value;
+  }
+  let value = SETTLING_WINDOW_DAYS;
+  try {
+    const { rows } = await getPool().query<{ ageDays: number; observed: string; changed: string }>(
+      `select age_days as "ageDays", observed::text, changed::text from sync_change_stats
+       where age_days between $1 and $2`,
+      [MIN_SETTLING_WINDOW_DAYS, SETTLING_WINDOW_DAYS]
+    );
+    value = pickSettlingWindow(
+      rows.map((r) => ({ ageDays: r.ageDays, observed: Number(r.observed), changed: Number(r.changed) }))
+    );
+  } catch {
+    // อ่านสถิติไม่ได้ → ใช้ค่าเพดานปลอดภัยไว้ก่อน
+  }
+  effectiveWindowCache = { value, expiresAt: Date.now() + EFFECTIVE_WINDOW_CACHE_MS };
+  return value;
 }
 
 export async function getSyncMeta(key: string): Promise<number | null> {

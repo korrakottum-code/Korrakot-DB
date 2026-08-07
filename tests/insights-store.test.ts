@@ -5,7 +5,9 @@ import {
   aggregateByAccountDate,
   aggregatesDiffer,
   collapseToRanges,
+  pickSettlingWindow,
   splitDateRange,
+  MIN_SETTLING_WINDOW_DAYS,
   SETTLING_WINDOW_DAYS,
   type DailyMetricRow,
 } from "../lib/insights-store.ts";
@@ -100,6 +102,47 @@ test("aggregateByAccountDate sums rows per (account, date) pair", () => {
   assert.equal(day1.spend, 15);
   assert.equal(day1.inbox, 3);
   assert.equal(map.get("act_2|2026-08-01")!.spend, 3);
+});
+
+const stat = (ageDays: number, observed: number, changed: number) => ({ ageDays, observed, changed });
+
+test("pickSettlingWindow keeps the full window until every older age has enough stable evidence", () => {
+  // ไม่มีสถิติเลย → ใช้เพดาน 7 วัน
+  assert.equal(pickSettlingWindow([]), SETTLING_WINDOW_DAYS);
+  // อายุ 3-7 นิ่งแต่การสังเกตยังไม่ถึงเกณฑ์ → ยังไม่หด
+  assert.equal(
+    pickSettlingWindow([stat(3, 100, 0), stat(4, 100, 0), stat(5, 100, 0), stat(6, 100, 0), stat(7, 100, 0)]),
+    SETTLING_WINDOW_DAYS
+  );
+  // ขาดสถิติอายุ 5 → หดได้แค่ถึง 6 (อายุ 5 ยังอยู่ในหน้าต่างที่ sync ต่อ ไม่เสี่ยง)
+  // แต่หดต่ำกว่านั้นไม่ได้เพราะจะทำให้อายุ 5 กลายเป็น final ทั้งที่ไม่มีหลักฐาน
+  assert.equal(
+    pickSettlingWindow([stat(3, 500, 0), stat(4, 500, 0), stat(6, 500, 0), stat(7, 500, 0)]),
+    6
+  );
+});
+
+test("pickSettlingWindow shrinks to the smallest age whose tail is all stable", () => {
+  const stable = (age: number) => stat(age, 1000, 3); // 0.3% เปลี่ยน
+  // อายุ 3-7 นิ่งหมด, อายุ 2 ยังเปลี่ยน 40% → หดได้ถึง 3
+  assert.equal(
+    pickSettlingWindow([stat(2, 1000, 400), stable(3), stable(4), stable(5), stable(6), stable(7)]),
+    3
+  );
+  // นิ่งหมดทุกช่วง → หดได้ถึงพื้น MIN
+  assert.equal(
+    pickSettlingWindow([stable(2), stable(3), stable(4), stable(5), stable(6), stable(7)]),
+    MIN_SETTLING_WINDOW_DAYS
+  );
+});
+
+test("pickSettlingWindow grows back when the boundary age starts changing again", () => {
+  const stable = (age: number) => stat(age, 1000, 3);
+  // เคยนิ่ง แต่ขอบอายุ 4 กลับมาเปลี่ยน 5% → ต้องถอยกลับไปกว้างกว่านั้น
+  assert.equal(
+    pickSettlingWindow([stable(2), stable(3), stat(4, 1000, 50), stable(5), stable(6), stable(7)]),
+    5
+  );
 });
 
 test("aggregatesDiffer treats missing side as zeros and tolerates float noise in spend", () => {

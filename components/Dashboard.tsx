@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   BarChart,
   Bar,
@@ -43,6 +43,18 @@ const DATE_PRESETS = [
   { label: "เดือนนี้", value: "this_month" },
   { label: "เดือนที่แล้ว", value: "last_month" },
 ];
+
+const THAI_MONTHS_SHORT = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+
+// "2026-08-01".."2026-08-06" → "1–6 ส.ค." / วันเดียว → "6 ส.ค." / ข้ามเดือน → "28 ก.ค. – 3 ส.ค."
+function fmtDateRange(since: string, until: string): string {
+  const [, ms, ds] = since.split("-").map(Number);
+  const [, mu, du] = until.split("-").map(Number);
+  if (ms === mu) {
+    return ds === du ? `${ds} ${THAI_MONTHS_SHORT[ms - 1]}` : `${ds}–${du} ${THAI_MONTHS_SHORT[ms - 1]}`;
+  }
+  return `${ds} ${THAI_MONTHS_SHORT[ms - 1]} – ${du} ${THAI_MONTHS_SHORT[mu - 1]}`;
+}
 
 function groupBy(insights: AdInsight[], key: TabKey): GroupedRow[] {
   const map: Record<string, GroupedRow> = {};
@@ -143,7 +155,10 @@ export default function Dashboard() {
   const [programFilter, setProgramFilter] = useState<string>("all");
   const [adCodeFilter, setAdCodeFilter] = useState<string>("");
   const [showComparison, setShowComparison] = useState<boolean>(false);
-  const [comparisonPeriod, setComparisonPeriod] = useState<{ since: string; until: string } | null>(null);
+  const [reportPeriods, setReportPeriods] = useState<{
+    current: { since: string; until: string };
+    comparison: { since: string; until: string };
+  } | null>(null);
   const [tableSort, setTableSort] = useState<{ col: string; dir: "asc" | "desc" }>({ col: "spend", dir: "desc" });
   const [customSince, setCustomSince] = useState("");
   const [customUntil, setCustomUntil] = useState("");
@@ -229,14 +244,23 @@ export default function Dashboard() {
     setExcludedBranches(new Set());
   };
 
+  const staleReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ให้ timer เรียก load เวอร์ชันล่าสุดเสมอ (เลี่ยงการอ้างถึงตัวเองใน useCallback)
+  const loadRef = useRef<(force?: boolean, overrideDates?: { since: string; until: string }) => void>(() => {});
+
   const load = useCallback(async (force = false, overrideDates?: { since: string; until: string }) => {
     const effectiveSince = overrideDates?.since ?? customSince;
     const effectiveUntil = overrideDates?.until ?? customUntil;
 
-    // For custom mode, require both dates
-    if (datePreset === "custom" && (!effectiveSince || !effectiveUntil)) return;
+    // overrideDates มาจากปุ่มค้นหาช่วงกำหนดเอง — ต้องถือเป็น custom ทันที
+    // เพราะตอนนั้น setDatePreset("custom") ยังไม่ทันมีผลใน closure นี้
+    // (ไม่งั้นจะยิง preset เก่าแบบ force refresh แทนช่วงที่เลือก)
+    const isCustom = datePreset === "custom" || overrideDates !== undefined;
 
-    const cacheKey = datePreset === "custom" ? `insights_custom_${effectiveSince}_${effectiveUntil}` : `insights_${datePreset}`;
+    // For custom mode, require both dates
+    if (isCustom && (!effectiveSince || !effectiveUntil)) return;
+
+    const cacheKey = isCustom ? `insights_custom_${effectiveSince}_${effectiveUntil}` : `insights_${datePreset}`;
     if (!force) {
       try {
         const cached = sessionStorage.getItem(cacheKey);
@@ -246,7 +270,7 @@ export default function Dashboard() {
             setInsights(data || []);
             setPrevInsights(prevData || []);
             setFetchFailures(failures || []);
-            if (periods?.comparison) setComparisonPeriod(periods.comparison);
+            if (periods?.current && periods?.comparison) setReportPeriods({ current: periods.current, comparison: periods.comparison });
             setServerCacheHit(true);
             setLastUpdated(new Date(fetchedAt || ts));
             return;
@@ -260,7 +284,7 @@ export default function Dashboard() {
     setServerCacheHit(false);
     try {
       let url: string;
-      if (datePreset === "custom") {
+      if (isCustom) {
         url = `/api/insights?since=${effectiveSince}&until=${effectiveUntil}`;
       } else {
         url = `/api/insights?date_preset=${datePreset}`;
@@ -276,18 +300,30 @@ export default function Dashboard() {
       setInsights(current);
       setPrevInsights(prev);
       setFetchFailures(failures);
-      if (data.periods?.comparison) setComparisonPeriod(data.periods.comparison);
+      if (data.periods?.current && data.periods?.comparison) setReportPeriods({ current: data.periods.current, comparison: data.periods.comparison });
       setServerCacheHit(Boolean(data.cache?.hit));
       setLastUpdated(new Date(fetchedAt));
-      try {
-        sessionStorage.setItem(cacheKey, JSON.stringify({ data: current, prevData: prev, failures, fetchedAt, periods: data.periods, ts: Date.now() }));
-      } catch {}
+      if (data.cache?.dataStale) {
+        // server เสิร์ฟตัวเลขเก่าไปก่อนแล้วกำลัง sync เบื้องหลัง — อย่าเก็บลง cache ฝั่งเรา
+        // และแวะโหลดซ้ำเงียบๆ อีกครั้งเพื่อรับตัวเลขที่อัปเดตแล้ว
+        if (staleReloadTimer.current) clearTimeout(staleReloadTimer.current);
+        staleReloadTimer.current = setTimeout(() => loadRef.current(false, overrideDates), 90_000);
+      } else {
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify({ data: current, prevData: prev, failures, fetchedAt, periods: data.periods, ts: Date.now() }));
+        } catch {}
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datePreset, customSince, customUntil]);
+
+  useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
 
   useEffect(() => {
     // For custom mode, don't auto-load — require explicit "ค้นหา" click
@@ -455,9 +491,10 @@ export default function Dashboard() {
           <div>
             <h1 className="text-xl font-bold text-white flex items-center gap-2">
               Meta Ads Dashboard
-              {comparisonPeriod && (
+              {reportPeriods && (
                 <span className="text-xs font-normal text-amber-300/90 bg-amber-950/60 border border-amber-800/60 px-2.5 py-0.5 rounded-full">
-                  vs {comparisonPeriod.since} ถึง {comparisonPeriod.until}
+                  {fmtDateRange(reportPeriods.current.since, reportPeriods.current.until)} เทียบ{" "}
+                  {fmtDateRange(reportPeriods.comparison.since, reportPeriods.comparison.until)}
                 </span>
               )}
             </h1>
@@ -492,7 +529,8 @@ export default function Dashboard() {
                 setDatePreset("custom");
                 setCustomSince(s);
                 setCustomUntil(u);
-                load(true, { since: s, until: u });
+                // ไม่ force — ให้ server ตัดสินความสดเอง (ข้อมูลที่ sync แล้วตอบใน 1-3 วิ)
+                load(false, { since: s, until: u });
               }}
             />
             <button

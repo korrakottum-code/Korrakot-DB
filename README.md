@@ -6,6 +6,7 @@
 ## ระบบทำอะไรบ้าง
 
 - ดึง Insights และ Campaign จาก Meta Graph API
+- **เก็บ Insights รายวันไว้ถาวรใน Postgres**: วันที่ผ่านไปแล้วเกิน 7 วัน (พ้นช่วงที่ Meta ยังปรับ attribution ได้) ดึงจาก Meta แค่ครั้งเดียวแล้วอ่านจาก DB ตลอดไป — ช่วง `เดือนที่แล้ว` ที่เคยใช้เวลา ~9 นาทีและมีโอกาสติด rate limit จะเหลือไม่กี่วินาทีหลัง sync ครั้งแรก ดู [`lib/insights-store.ts`](./lib/insights-store.ts)
 - รวมข้อมูลจาก access token ได้สูงสุด 3 ตัว และตัดข้อมูลซ้ำก่อนแสดงผล
 - แสดง Spend, Impressions, Inbox, Leads, CPI และ CPL
 - แสดงรูป/วิดีโอของ Creative พร้อมจัดอันดับตาม metric
@@ -47,6 +48,8 @@ INTERNAL_DASHBOARD_PASSWORD=รหัสผ่านสำหรับทีม�
 INTERNAL_DASHBOARD_SECRET=กุญแจสุ่มอย่างน้อย32ตัวอักษร
 ```
 
+ยังต้องตั้งค่า `POSTGRES_URL` ด้วย — ดูขั้นตอนที่หัวข้อ [ตั้งค่า Postgres สำหรับ insights cache](#ตั้งค่า-postgres-สำหรับ-insights-cache-ทำครั้งเดียว) ด้านล่าง
+
 ห้ามใช้ชื่อที่ขึ้นต้นด้วย `NEXT_PUBLIC_` และห้าม commit token ลง Git เพราะ API จะอ่าน token เฉพาะฝั่ง server
 
 สร้างค่า `INTERNAL_DASHBOARD_SECRET` แบบสุ่มได้ด้วย:
@@ -65,13 +68,37 @@ npm run dev
 
 แล้วเปิด [http://localhost:3000](http://localhost:3000)
 
+## ตั้งค่า Postgres สำหรับ insights cache (ทำครั้งเดียว)
+
+Dashboard เก็บ Insights รายวันไว้ถาวรใน [Vercel Postgres](https://vercel.com/docs/storage/vercel-postgres) (Neon) — อยู่ใน Vercel project เดียวกันที่ deploy อยู่แล้ว ไม่ต้องเปิดบัญชี/บริการใหม่ และ connection string เป็นความลับฝั่ง server เท่านั้น (ไม่มี anon key ฝั่ง client แบบ Supabase)
+
+1. Vercel Dashboard → project นี้ → แท็บ **Storage** → **Create Database** → เลือก **Postgres** → ตั้งชื่อ (เช่น `korrakot-db-insights`) → Create
+2. Vercel จะเพิ่ม env var `POSTGRES_URL` ให้ทุก Environment อัตโนมัติ
+3. ดึงค่าเดียวกันมาใช้ในเครื่อง:
+   ```bash
+   vercel env pull .env.local
+   ```
+   หรือคัดลอกค่า `POSTGRES_URL` จาก Vercel มาวางใน `.env.local` เอง
+4. รัน migration ครั้งเดียว (สร้างตาราง `ad_daily_metrics`, `ad_sync_progress`, `ad_name_cache`):
+   ```bash
+   npm run migrate-insights-db
+   ```
+5. (แนะนำ) pre-warm ข้อมูลย้อนหลังก่อนเปิดใช้งานจริง เพื่อไม่ให้ผู้ใช้คนแรกที่กดดูช่วงเวลากว้างๆ ต้องรอ sync ครั้งแรกเอง:
+   ```bash
+   BACKFILL_DAYS=90 npm run backfill-insights
+   ```
+   รันซ้ำได้ปลอดภัย — วันที่ sync แล้วจะถูกข้าม ไม่ดึงซ้ำ
+
+ถ้ายังไม่ได้ตั้งค่า `POSTGRES_URL` ระบบจะ error ตอนเรียก `/api/insights` ที่ต้องอ่าน/เขียนข้อมูลรายวัน
+
 ## Deploy บน Vercel
 
 1. เปิด Project ใน Vercel แล้วไปที่ **Settings → Environment Variables**
 2. เพิ่ม `META_ACCESS_TOKEN`, `META_ACCESS_TOKEN_2` และ `META_ACCESS_TOKEN_3` ตามจำนวนที่ใช้
 3. เพิ่ม `INTERNAL_DASHBOARD_PASSWORD` และ `INTERNAL_DASHBOARD_SECRET` โดยใช้ค่าเดียวกันใน Preview และ Production ถ้าต้องการ Login ชุดเดียวกัน
-4. เลือก Environment ให้ตรงกับ deployment ที่จะเปิดใช้ เช่น Production หรือ Preview
-5. กด **Redeploy** หลังบันทึกตัวแปรทุกครั้ง
+4. `POSTGRES_URL` ถูกเพิ่มให้อัตโนมัติแล้วตอนสร้าง Vercel Postgres ด้านบน (ถ้ายังไม่ได้ทำ ให้ทำก่อน deploy)
+5. เลือก Environment ให้ตรงกับ deployment ที่จะเปิดใช้ เช่น Production หรือ Preview
+6. กด **Redeploy** หลังบันทึกตัวแปรทุกครั้ง
 
 ถ้าหน้าจอขึ้น `No META_ACCESS_TOKEN configured` ให้ตรวจชื่อ variable, Environment และการ Redeploy ก่อน การแก้ `.env.local` ในเครื่องจะไม่เปลี่ยนค่าใน Vercel
 

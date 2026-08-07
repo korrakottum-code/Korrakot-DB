@@ -38,12 +38,24 @@ test("reporting periods use equal-length comparisons and MTD", () => {
   assert.equal(last7.comparison.days, 7);
   assert.equal(last7.comparisonFair, true);
 
+  // MTD เทียบเฉพาะวันที่จบแล้ว: วันที่ 11 → เทียบ 1-10 เดือนนี้ กับ 1-10 เดือนก่อน
   const mtd = getReportingPeriods("this_month", { now });
   assert.equal(mtd.current.since, "2026-07-01");
-  assert.equal(mtd.current.until, "2026-07-11");
+  assert.equal(mtd.current.until, "2026-07-10");
   assert.equal(mtd.comparison.since, "2026-06-01");
-  assert.equal(mtd.comparison.until, "2026-06-11");
+  assert.equal(mtd.comparison.until, "2026-06-10");
+  assert.equal(mtd.current.isPartial, false);
   assert.equal(mtd.comparisonMode, "month_to_date");
+});
+
+test("this_month on day 1 falls back to partial-day comparison", () => {
+  // 1 ก.ค. 10:00 UTC = 17:00 เวลาไทย — ยังไม่มีวันที่จบในเดือนนี้
+  const periods = getReportingPeriods("this_month", { now: new Date("2026-07-01T10:00:00.000Z") });
+  assert.equal(periods.current.since, "2026-07-01");
+  assert.equal(periods.current.until, "2026-07-01");
+  assert.equal(periods.current.isPartial, true);
+  assert.equal(periods.comparison.since, "2026-06-01");
+  assert.equal(periods.comparison.until, "2026-06-01");
 });
 
 test("today is marked partial and includes pacing note", () => {

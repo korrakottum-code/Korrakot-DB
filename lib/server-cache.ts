@@ -76,6 +76,11 @@ export async function getServerCache<T>(
   return startLoad(key, ttlMs, loader);
 }
 
+/** ลบ cache รายคีย์ — ใช้หลัง sync เบื้องหลังเสร็จ เพื่อให้ request ถัดไปประกอบคำตอบจากข้อมูลใหม่ */
+export function deleteServerCache(key: string): void {
+  entries.delete(key);
+}
+
 export function clearServerCache(): void {
   entries.clear();
   inFlight.clear();

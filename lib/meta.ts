@@ -1,10 +1,11 @@
 import { parseAdName, ParsedAdName } from "./parser";
 import { fetchGraphPages } from "./pagination";
 import { META_GRAPH_API_BASE } from "./meta-version";
+import type { AdNameRow, DailyMetricRow } from "./insights-store";
 
 
-/** Retry once after a delay when Meta returns a rate-limit error. Fast path is unchanged. */
-async function withRateLimitRetry<T>(fn: () => Promise<T>, retries = 1, delayMs = 3000): Promise<T> {
+/** Retry after a delay when Meta returns a rate-limit error. Fast path is unchanged. */
+async function withRateLimitRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 5000): Promise<T> {
   try {
     return await fn();
   } catch (err) {
@@ -15,6 +16,33 @@ async function withRateLimitRetry<T>(fn: () => Promise<T>, retries = 1, delayMs 
     }
     throw err;
   }
+}
+
+// Meta นับโควตาคำขอระดับ user แบบ burst — ยิงทุกบัญชีพร้อมกันทำให้ติด
+// "User request limit reached" จึงคุมจำนวนคำขอที่วิ่งพร้อมกันต่อ token
+// (ทดสอบจริง: concurrency=8 ยิงถี่ขึ้นแล้วกลับติด limit มากกว่า concurrency=4 —
+// ปัญหาจริงคือปริมาณข้อมูลต่อคำขอ ไม่ใช่จำนวนคำขอพร้อมกัน แก้ที่ lib/insights-store.ts แทน)
+const ACCOUNT_FETCH_CONCURRENCY = 4;
+
+async function mapSettledWithConcurrency<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>,
+  limit = ACCOUNT_FETCH_CONCURRENCY
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      try {
+        results[index] = { status: "fulfilled", value: await fn(items[index]) };
+      } catch (reason) {
+        results[index] = { status: "rejected", reason };
+      }
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 const META_API_BASE = META_GRAPH_API_BASE;
@@ -158,10 +186,8 @@ export async function fetchAllInsights(
     };
   }
 
-  const results = await Promise.allSettled(
-    accounts.map((acc) =>
-      withRateLimitRetry(() => fetchInsightsForAccount(acc.id, acc.name, token, datePreset, since, until))
-    )
+  const results = await mapSettledWithConcurrency(accounts, (acc) =>
+    withRateLimitRetry(() => fetchInsightsForAccount(acc.id, acc.name, token, datePreset, since, until))
   );
 
   const insights: AdInsight[] = [];
@@ -181,6 +207,164 @@ export async function fetchAllInsights(
   }
 
   return { insights, accounts, failures };
+}
+
+/* ──────────────────────────────────────────────
+   Lean fetchers for the persistent insights store (lib/insights-store.ts).
+   Metrics and ad names are fetched/stored separately — see that file's
+   header comment for why (ad renames must not corrupt historical rows).
+   ────────────────────────────────────────────── */
+
+async function fetchDailyMetricsForAccount(
+  accountId: string,
+  token: string,
+  since: string,
+  until: string
+): Promise<DailyMetricRow[]> {
+  // ad_name มาฟรีกับ insights (เป็นชื่อปัจจุบัน ณ เวลา fetch) — ใช้อัปเดต ad_name_cache
+  // โดยไม่ต้องกวาดรายชื่อแอดทั้งบัญชีแยกอีกรอบ
+  const fields = "ad_id,ad_name,campaign_id,adset_id,spend,impressions,clicks,reach,actions";
+  const timeRange = `&time_range={"since":"${since}","until":"${until}"}`;
+  const initialUrl = `${META_API_BASE}/${accountId}/insights?fields=${fields}&level=ad&time_increment=1${timeRange}&limit=500&access_token=${token}`;
+  const result = await fetchGraphPages<Record<string, unknown>>(initialUrl);
+
+  if (result.error) throw new Error(result.error.message);
+
+  const rows: DailyMetricRow[] = [];
+  for (const row of result.data) {
+    const adId = String(row.ad_id || "");
+    if (!adId) continue;
+    const getAction = (actions: { action_type: string; value: string }[], type: string) =>
+      parseInt(actions?.find((a) => a.action_type === type)?.value || "0");
+    const actions = row.actions as { action_type: string; value: string }[];
+
+    rows.push({
+      accountId,
+      adId,
+      adName: String(row.ad_name || ""),
+      date: String(row.date_start || ""),
+      campaignId: String(row.campaign_id || ""),
+      adSetId: String(row.adset_id || ""),
+      spend: parseFloat(String(row.spend || "0")),
+      impressions: parseInt(String(row.impressions || "0")),
+      clicks: parseInt(String(row.clicks || "0")),
+      reach: parseInt(String(row.reach || "0")),
+      inbox: getAction(actions, "onsite_conversion.messaging_conversation_started_7d"),
+      leads: getAction(actions, "lead"),
+    });
+  }
+  return rows;
+}
+
+/** Fetches daily ad-level metrics for one date range across all of a token's accounts — used to backfill/refresh the persistent store. */
+export async function fetchDailyMetrics(
+  token: string,
+  since: string,
+  until: string
+): Promise<{ rows: DailyMetricRow[]; accounts: AdAccount[]; failures: FetchFailure[] }> {
+  let accounts: AdAccount[];
+  try {
+    accounts = await fetchAllAdAccounts(token);
+  } catch (error: unknown) {
+    return {
+      rows: [],
+      accounts: [],
+      failures: [{ scope: "accounts", message: error instanceof Error ? error.message : "Unknown account error" }],
+    };
+  }
+
+  const results = await mapSettledWithConcurrency(accounts, (acc) =>
+    withRateLimitRetry(() => fetchDailyMetricsForAccount(acc.id, token, since, until))
+  );
+
+  const rows: DailyMetricRow[] = [];
+  const failures: FetchFailure[] = [];
+  for (const [index, result] of results.entries()) {
+    if (result.status === "fulfilled") {
+      rows.push(...result.value);
+    } else {
+      const account = accounts[index];
+      failures.push({
+        scope: "insights",
+        accountId: account.id,
+        accountName: account.name,
+        message: result.reason instanceof Error ? result.reason.message : "Unknown insights error",
+      });
+    }
+  }
+
+  return { rows, accounts, failures };
+}
+
+/** Just the token's ad-account list — 1-2 requests, cheap enough to cache per token and reuse across presets. */
+export async function fetchAccounts(token: string): Promise<{ accounts: AdAccount[]; failures: FetchFailure[] }> {
+  try {
+    return { accounts: await fetchAllAdAccounts(token), failures: [] };
+  } catch (error: unknown) {
+    return {
+      accounts: [],
+      failures: [{ scope: "accounts", message: error instanceof Error ? error.message : "Unknown account error" }],
+    };
+  }
+}
+
+async function fetchAdNamesForAccount(accountId: string, token: string): Promise<AdNameRow[]> {
+  const initialUrl = `${META_API_BASE}/${accountId}/ads?fields=id,name,campaign_id,adset_id&limit=500&access_token=${token}`;
+  const result = await fetchGraphPages<Record<string, unknown>>(initialUrl);
+
+  if (result.error) throw new Error(result.error.message);
+
+  const rows: AdNameRow[] = [];
+  for (const row of result.data) {
+    const adId = String(row.id || "");
+    if (!adId || !row.name) continue;
+    rows.push({
+      adId,
+      accountId,
+      adName: String(row.name),
+      campaignId: String(row.campaign_id || ""),
+      adSetId: String(row.adset_id || ""),
+    });
+  }
+  return rows;
+}
+
+/** Fetches every ad's CURRENT name across all of a token's accounts — cheap (no time_increment/metrics), meant to be refreshed often via the existing server-cache TTL. */
+export async function fetchAdNames(
+  token: string
+): Promise<{ rows: AdNameRow[]; accounts: AdAccount[]; failures: FetchFailure[] }> {
+  let accounts: AdAccount[];
+  try {
+    accounts = await fetchAllAdAccounts(token);
+  } catch (error: unknown) {
+    return {
+      rows: [],
+      accounts: [],
+      failures: [{ scope: "accounts", message: error instanceof Error ? error.message : "Unknown account error" }],
+    };
+  }
+
+  const results = await mapSettledWithConcurrency(accounts, (acc) =>
+    withRateLimitRetry(() => fetchAdNamesForAccount(acc.id, token))
+  );
+
+  const rows: AdNameRow[] = [];
+  const failures: FetchFailure[] = [];
+  for (const [index, result] of results.entries()) {
+    if (result.status === "fulfilled") {
+      rows.push(...result.value);
+    } else {
+      const account = accounts[index];
+      failures.push({
+        scope: "insights",
+        accountId: account.id,
+        accountName: account.name,
+        message: result.reason instanceof Error ? result.reason.message : "Unknown ad-name error",
+      });
+    }
+  }
+
+  return { rows, accounts, failures };
 }
 
 /* ──────────────────────────────────────────────
@@ -317,8 +501,7 @@ export async function fetchAllCampaignMetadata(
     };
   }
 
-  const results = await Promise.allSettled(
-    accounts.map((acc) =>
+  const results = await mapSettledWithConcurrency(accounts, (acc) =>
       withRateLimitRetry(async () => {
       const [budgets, adSetGoals] = await Promise.all([fetchCampaignBudgets(acc.id, token), fetchAdSetOptimizationGoals(acc.id, token)]);
       const campaigns = budgets.map((budget): CampaignRow => ({
@@ -339,7 +522,6 @@ export async function fetchAllCampaignMetadata(
       }));
       return { campaigns, adSetGoals };
     })
-  )
   );
 
   const campaigns: CampaignRow[] = [];
@@ -379,8 +561,7 @@ export async function fetchAllCampaignData(
     };
   }
 
-  const results = await Promise.allSettled(
-    accounts.map((acc) =>
+  const results = await mapSettledWithConcurrency(accounts, (acc) =>
       withRateLimitRetry(async () => {
       const [insightsRaw, budgetsRaw] = await Promise.all([
         fetchCampaignInsights(acc.id, token, datePreset, since, until),
@@ -428,7 +609,6 @@ export async function fetchAllCampaignData(
         };
       });
     })
-  )
   );
 
   const campaigns: CampaignRow[] = [];

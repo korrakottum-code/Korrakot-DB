@@ -13,7 +13,7 @@ import {
 } from "./insights-store";
 
 /** ช่วง recent ที่ sync แล้วภายในเวลานี้ ไม่ต้องยิง Meta ซ้ำ — สลับ preset ไปมาจึงอ่านจาก DB ล้วน (ปุ่มรีเฟรชยังบังคับดึงใหม่ได้) */
-const RECENT_SYNC_MAX_AGE_MS = 10 * 60 * 1000;
+export const RECENT_SYNC_MAX_AGE_MS = 10 * 60 * 1000;
 // กวาดชื่อแอด "ทั้งหมด" (รวมแอดที่หยุดรันไปแล้ว) วันละครั้งพอ — ชื่อของแอดที่ยังใช้เงินอยู่
 // อัปเดตติดมากับ fetch metrics ทุกรอบอยู่แล้ว รอบกวาดนี้มีไว้จับ rename ของแอดเก่าเท่านั้น
 const AD_NAME_SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -75,6 +75,10 @@ export async function syncFinalDates(token: string, accountIds: string[], finalD
  * findMissingFinalRanges — so each day still gets one last fetch after it
  * settles.
  */
+// กัน request ที่มาไล่เลี่ยกัน (เช่นหลาย preset สั่ง sync เบื้องหลังพร้อมกัน) กวาดช่วงเดียวกันซ้ำ —
+// รอบที่วิ่งอยู่แชร์ promise เดียวกัน รอบถัดไปเจอ freshness ใน DB แล้วเป็น no-op เอง
+const inFlightRecentSync = new Map<string, Promise<FetchFailure[]>>();
+
 export async function syncRecentDates(
   token: string,
   accountIds: string[],
@@ -86,13 +90,24 @@ export async function syncRecentDates(
 
   const since = recentDates[0];
   const until = recentDates[recentDates.length - 1];
-  const { rows, accounts, failures } = await fetchDailyMetrics(token, since, until);
-  await upsertDailyMetrics(rows);
-  await upsertAdNames(adNamesFromRows(rows));
-  const swept = sweptAccountIds(accounts, failures);
-  await Promise.all(swept.map((id) => markSynced(id, recentDates)));
+  const flightKey = `${token.slice(-16)}:${since}:${until}`;
+  const inFlight = inFlightRecentSync.get(flightKey);
+  if (inFlight && !forceRefresh) return inFlight;
 
-  return failures;
+  const run = (async () => {
+    const { rows, accounts, failures } = await fetchDailyMetrics(token, since, until);
+    await upsertDailyMetrics(rows);
+    await upsertAdNames(adNamesFromRows(rows));
+    const swept = sweptAccountIds(accounts, failures);
+    await Promise.all(swept.map((id) => markSynced(id, recentDates)));
+    return failures;
+  })();
+  inFlightRecentSync.set(flightKey, run);
+  try {
+    return await run;
+  } finally {
+    if (inFlightRecentSync.get(flightKey) === run) inFlightRecentSync.delete(flightKey);
+  }
 }
 
 /** sync ช่วงวันที่ที่ขอทั้งก้อน (final เฉพาะที่ยังไม่มี + recent ตาม freshness) สำหรับ 1 token */
@@ -102,12 +117,13 @@ export async function syncRange(
   since: string,
   until: string,
   asOf: Date,
-  forceRefresh = false
+  options: { forceRefresh?: boolean; skipRecent?: boolean } = {}
 ): Promise<FetchFailure[]> {
   const { finalDates, recentDates } = splitDateRange(since, until, asOf);
   return [
     ...(await syncFinalDates(token, accountIds, finalDates)),
-    ...(await syncRecentDates(token, accountIds, recentDates, forceRefresh)),
+    // skipRecent = โหมดเสิร์ฟก่อน: ช่วง recent มีข้อมูลครบแต่เก่า จะถูก sync เบื้องหลังแทน
+    ...(options.skipRecent ? [] : await syncRecentDates(token, accountIds, recentDates, options.forceRefresh)),
   ];
 }
 
@@ -127,5 +143,10 @@ export async function ensureDailyAdNameSweep(tokens: string[]): Promise<FetchFai
 
   const results = await Promise.all(tokens.map((token) => fetchAdNames(token)));
   await upsertAdNames(results.flatMap((r) => r.rows));
-  return results.flatMap((r) => r.failures);
+  const failures = results.flatMap((r) => r.failures);
+  // รันเบื้องหลังหลังส่งคำตอบไปแล้ว — ไม่มีที่ให้แสดงบนหน้าเว็บ จึงบันทึกลง log ฝั่งเซิร์ฟเวอร์
+  for (const f of failures) {
+    console.warn(`[ad-name-sweep] ${f.accountName || f.accountId || f.scope}: ${f.message}`);
+  }
+  return failures;
 }

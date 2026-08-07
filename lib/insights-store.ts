@@ -179,16 +179,30 @@ export async function findMissingFinalRanges(accountIds: string[], finalDates: s
   return collapseToRanges([...missing].sort());
 }
 
-/** true เมื่อทุกคู่ (account, date) ของช่วง recent ถูก sync ภายใน maxAgeMs — ใช้ข้ามการยิง Meta ซ้ำเมื่อสลับ preset */
-export async function isRecentWindowFresh(accountIds: string[], recentDates: string[], maxAgeMs: number): Promise<boolean> {
-  if (recentDates.length === 0 || accountIds.length === 0) return true;
-  const { rows } = await getPool().query<{ n: number }>(
-    `select count(*)::int as n from ad_sync_progress
-     where account_id = any($1::text[]) and date = any($2::date[])
-       and synced_at > now() - interval '1 millisecond' * $3`,
+export interface RecentWindowState {
+  /** ทุกคู่ (account, date) เคยถูก sync แล้ว — เสิร์ฟจาก DB ได้เลยแม้จะเก่า */
+  covered: boolean;
+  /** ทุกคู่ถูก sync ภายใน maxAgeMs — ไม่ต้องยิง Meta ซ้ำ */
+  fresh: boolean;
+}
+
+/** สถานะความสดของช่วง recent ในคำถามเดียว — covered ใช้ตัดสินว่าเสิร์ฟก่อนแล้วค่อย sync เบื้องหลังได้ไหม */
+export async function recentWindowState(accountIds: string[], recentDates: string[], maxAgeMs: number): Promise<RecentWindowState> {
+  if (recentDates.length === 0 || accountIds.length === 0) return { covered: true, fresh: true };
+  const { rows } = await getPool().query<{ covered: number; fresh: number }>(
+    `select count(*)::int as covered,
+            (count(*) filter (where synced_at > now() - interval '1 millisecond' * $3))::int as fresh
+     from ad_sync_progress
+     where account_id = any($1::text[]) and date = any($2::date[])`,
     [accountIds, recentDates, maxAgeMs]
   );
-  return rows[0].n === accountIds.length * recentDates.length;
+  const total = accountIds.length * recentDates.length;
+  return { covered: rows[0].covered === total, fresh: rows[0].fresh === total };
+}
+
+/** true เมื่อทุกคู่ (account, date) ของช่วง recent ถูก sync ภายใน maxAgeMs — ใช้ข้ามการยิง Meta ซ้ำเมื่อสลับ preset */
+export async function isRecentWindowFresh(accountIds: string[], recentDates: string[], maxAgeMs: number): Promise<boolean> {
+  return (await recentWindowState(accountIds, recentDates, maxAgeMs)).fresh;
 }
 
 export async function getSyncMeta(key: string): Promise<number | null> {

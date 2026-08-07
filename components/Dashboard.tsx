@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   BarChart,
   Bar,
@@ -244,6 +244,10 @@ export default function Dashboard() {
     setExcludedBranches(new Set());
   };
 
+  const staleReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ให้ timer เรียก load เวอร์ชันล่าสุดเสมอ (เลี่ยงการอ้างถึงตัวเองใน useCallback)
+  const loadRef = useRef<(force?: boolean, overrideDates?: { since: string; until: string }) => void>(() => {});
+
   const load = useCallback(async (force = false, overrideDates?: { since: string; until: string }) => {
     const effectiveSince = overrideDates?.since ?? customSince;
     const effectiveUntil = overrideDates?.until ?? customUntil;
@@ -299,15 +303,27 @@ export default function Dashboard() {
       if (data.periods?.current && data.periods?.comparison) setReportPeriods({ current: data.periods.current, comparison: data.periods.comparison });
       setServerCacheHit(Boolean(data.cache?.hit));
       setLastUpdated(new Date(fetchedAt));
-      try {
-        sessionStorage.setItem(cacheKey, JSON.stringify({ data: current, prevData: prev, failures, fetchedAt, periods: data.periods, ts: Date.now() }));
-      } catch {}
+      if (data.cache?.dataStale) {
+        // server เสิร์ฟตัวเลขเก่าไปก่อนแล้วกำลัง sync เบื้องหลัง — อย่าเก็บลง cache ฝั่งเรา
+        // และแวะโหลดซ้ำเงียบๆ อีกครั้งเพื่อรับตัวเลขที่อัปเดตแล้ว
+        if (staleReloadTimer.current) clearTimeout(staleReloadTimer.current);
+        staleReloadTimer.current = setTimeout(() => loadRef.current(false, overrideDates), 90_000);
+      } else {
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify({ data: current, prevData: prev, failures, fetchedAt, periods: data.periods, ts: Date.now() }));
+        } catch {}
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datePreset, customSince, customUntil]);
+
+  useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
 
   useEffect(() => {
     // For custom mode, don't auto-load — require explicit "ค้นหา" click

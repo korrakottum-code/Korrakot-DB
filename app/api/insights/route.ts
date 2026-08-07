@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { fetchAccounts, fetchAllCampaignMetadata, type AdAccount, type AdInsight } from "@/lib/meta";
 import { dedupeAccounts, dedupeCampaigns, dedupeInsights } from "@/lib/dedupe";
-import { getServerCache } from "@/lib/server-cache";
+import { deleteServerCache, getServerCache } from "@/lib/server-cache";
 import { consumeApiRateLimit } from "@/lib/rate-limit";
 import { validateDateQuery } from "@/lib/request-validation";
 import { requireInternalApiAuth } from "@/lib/api-auth";
@@ -16,8 +16,8 @@ import {
   sumReportingRows,
 } from "@/lib/reporting";
 import { createSnapshotId } from "@/lib/report-export";
-import { readInsightRows } from "@/lib/insights-store";
-import { ensureDailyAdNameSweep, syncRange } from "@/lib/insights-sync";
+import { readInsightRows, recentWindowState, splitDateRange } from "@/lib/insights-store";
+import { ensureDailyAdNameSweep, RECENT_SYNC_MAX_AGE_MS, syncRange } from "@/lib/insights-sync";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
 // หลัง cache หมดอายุ ยังเสิร์ฟข้อมูลเก่าได้อีก 1 ชม. ระหว่างรีเฟรชจาก Meta เบื้องหลัง
@@ -26,6 +26,8 @@ const CACHE_STALE_TTL_MS = 60 * 60 * 1000;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// งาน sync เบื้องหลัง (after) ต้องมีเวลาพอให้กวาด Meta จบแม้ตอนโดน throttle
+export const maxDuration = 300;
 
 function toAdInsight(row: Awaited<ReturnType<typeof readInsightRows>>[number], accountName: string): AdInsight {
   const parsed = parseAdName(row.adName);
@@ -102,10 +104,12 @@ export async function GET(req: NextRequest) {
     const ranges = { current: periods.current, previous: periods.comparison };
     const asOf = new Date(periods.asOf);
 
-    // รายชื่อบัญชีโฆษณาต่อ token — ถูกและไม่ผูกกับช่วงวันที่ cache ร่วมกันทุก preset
+    // รายชื่อบัญชีโฆษณาต่อ token — แทบไม่เคยเปลี่ยน จึงเสิร์ฟของเก่าได้ระหว่างรีเฟรชเบื้องหลัง
+    // (ถ้าไม่มี staleTtl ทุกๆ 10 นาทีจะมี request หนึ่งตัวถูกบล็อกรอ Meta ตอบ ซึ่งตอนโดน
+    // throttle ค้างได้เป็นนาที — วัดจริงเจอ ~79 วิ)
     const accountResults = await Promise.all(
       tokens.map((token, tokenIndex) =>
-        getServerCache(`accounts:${tokenIndex}`, CACHE_TTL_MS, () => fetchAccounts(token))
+        getServerCache(`accounts:${tokenIndex}`, CACHE_TTL_MS, () => fetchAccounts(token), false, { staleTtlMs: 24 * 60 * 60 * 1000 })
       )
     );
     const accounts = dedupeAccounts(accountResults.flatMap((r) => r.value.accounts));
@@ -123,26 +127,67 @@ export async function GET(req: NextRequest) {
       ranges.previous.until,
     ].join(":");
 
-    const cached = await getServerCache(cacheKey, CACHE_TTL_MS, async () => {
-      // กวาดชื่อแอดทั้งบัญชี (จับ rename ของแอดเก่า) วันละครั้ง — จังหวะจากตาราง sync_meta
-      const sweepFailures = await ensureDailyAdNameSweep(tokens);
+    // เสิร์ฟก่อน-อัปเดตทีหลัง: ถ้าช่วง recent มีข้อมูลครบแล้ว (แค่เก่าเกิน 10 นาที)
+    // ตอบจาก DB ทันทีแล้วค่อย sync เบื้องหลัง — ทุกคลิกจึงจบใน 1-3 วิ
+    // ต้องรอ sync จริงเฉพาะ: กดรีเฟรชเอง หรือช่วงที่ไม่เคยมีข้อมูลเลย (ครั้งแรกครั้งเดียว)
+    const recentDatesUnion = [
+      ...new Set([
+        ...splitDateRange(ranges.current.since, ranges.current.until, asOf).recentDates,
+        ...splitDateRange(ranges.previous.since, ranges.previous.until, asOf).recentDates,
+      ]),
+    ].sort();
+    const recentState = await recentWindowState(accountIds, recentDatesUnion, RECENT_SYNC_MAX_AGE_MS);
+    const deferRecentSync = !forceRefresh && recentState.covered && !recentState.fresh;
 
-      // sync ทั้งสองช่วงพร้อมกัน: วันที่ final ที่ขาด + ช่วง recent ที่หมดอายุความสดเท่านั้น
-      // (ปกติหลัง sync รอบแรกของวัน ทั้งคู่เป็น no-op → เหลือแค่อ่าน Postgres)
+    // กวาดชื่อแอดทั้งบัญชี (จับ rename ของแอดเก่า) วันละครั้ง — เช็คจังหวะจากตาราง sync_meta
+    // และทำหลังส่งคำตอบแล้วเสมอ ไม่บล็อกผู้ใช้ (ฟังก์ชันเป็น no-op เมื่อยังไม่ถึงรอบ)
+    after(async () => {
+      try {
+        await ensureDailyAdNameSweep(tokens);
+      } catch (err) {
+        console.warn("[ad-name-sweep] failed:", err instanceof Error ? err.message : err);
+      }
+    });
+
+    if (deferRecentSync) {
+      after(async () => {
+        try {
+          await Promise.all(
+            tokens.flatMap((token) => [
+              syncRange(token, accountIds, ranges.current.since, ranges.current.until, asOf),
+              syncRange(token, accountIds, ranges.previous.since, ranges.previous.until, asOf),
+            ])
+          );
+          // ให้ request ถัดไปประกอบคำตอบจากตัวเลขที่เพิ่ง sync แทนค่าเก่าใน cache
+          deleteServerCache(cacheKey);
+        } catch (err) {
+          console.warn("[background-sync] failed:", err instanceof Error ? err.message : err);
+        }
+      });
+    }
+
+    const cached = await getServerCache(cacheKey, CACHE_TTL_MS, async () => {
+      const tPhase = Date.now();
+      // sync ทั้งสองช่วงพร้อมกัน: วันที่ final ที่ขาด + ช่วง recent ตามโหมดที่ตัดสินไว้ข้างบน
+      // (ปกติทั้งคู่เป็น no-op → เหลือแค่อ่าน Postgres)
       // campaign metadata ไม่ผูกช่วงวันที่ — cache แยกต่อ token ใช้ร่วมกันทุก preset
+      const syncOptions = { forceRefresh, skipRecent: deferRecentSync };
       const [currentSyncFailures, prevSyncFailures, campaignResults] = await Promise.all([
-        Promise.all(tokens.map((token) => syncRange(token, accountIds, ranges.current.since, ranges.current.until, asOf, forceRefresh))),
-        Promise.all(tokens.map((token) => syncRange(token, accountIds, ranges.previous.since, ranges.previous.until, asOf, forceRefresh))),
+        Promise.all(tokens.map((token) => syncRange(token, accountIds, ranges.current.since, ranges.current.until, asOf, syncOptions))),
+        Promise.all(tokens.map((token) => syncRange(token, accountIds, ranges.previous.since, ranges.previous.until, asOf, syncOptions))),
         Promise.all(tokens.map((token, tokenIndex) =>
           getServerCache(`campaigns:${tokenIndex}`, CACHE_TTL_MS, () => fetchAllCampaignMetadata(token), forceRefresh, { staleTtlMs: CACHE_STALE_TTL_MS }).then((r) => r.value)
         )),
       ]);
+      console.log(`[timing] ${cacheKey} sync+campaigns: ${Date.now() - tPhase}ms`);
+      const tRead = Date.now();
 
       // อ่านครั้งเดียวต่อช่วง (ไม่ใช่ต่อ token) — ข้อมูลใน DB รวมของทุก token อยู่แล้ว
       const [currentStored, previousStored] = await Promise.all([
         readInsightRows(accountIds, ranges.current.since, ranges.current.until),
         readInsightRows(accountIds, ranges.previous.since, ranges.previous.until),
       ]);
+      console.log(`[timing] ${cacheKey} reads: ${Date.now() - tRead}ms (${currentStored.length}+${previousStored.length} rows)`);
 
       const rawInsights = dedupeInsights(
         currentStored.map((row) => toAdInsight(row, accountNameById.get(row.accountId) || row.accountId))
@@ -183,7 +228,6 @@ export async function GET(req: NextRequest) {
         previousStored.map((row) => toAdInsight(row, accountNameById.get(row.accountId) || row.accountId))
       );
       const failures = [
-        ...sweepFailures.map((failure) => ({ ...failure, tokenIndex: 0, period: "current" as const })),
         ...currentSyncFailures.flatMap((tokenFailures, tokenIndex) =>
           tokenFailures.map((failure) => ({ ...failure, tokenIndex: tokenIndex + 1, period: "current" as const }))
         ),
@@ -304,7 +348,14 @@ export async function GET(req: NextRequest) {
       statusBreakdown,
       pacing,
       coverage,
-      cache: { hit: cached.hit, fetchedAt: cached.fetchedAt, asOf: periods.asOf, stale: cached.stale === true },
+      cache: {
+        hit: cached.hit,
+        fetchedAt: cached.fetchedAt,
+        asOf: periods.asOf,
+        stale: cached.stale === true,
+        // ช่วง recent เก่าเกินเกณฑ์แต่เสิร์ฟไปก่อน — กำลัง sync เบื้องหลัง ให้ client แวะมาอ่านซ้ำ
+        dataStale: deferRecentSync,
+      },
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";

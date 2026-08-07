@@ -248,10 +248,15 @@ export default function Dashboard() {
     const effectiveSince = overrideDates?.since ?? customSince;
     const effectiveUntil = overrideDates?.until ?? customUntil;
 
-    // For custom mode, require both dates
-    if (datePreset === "custom" && (!effectiveSince || !effectiveUntil)) return;
+    // overrideDates มาจากปุ่มค้นหาช่วงกำหนดเอง — ต้องถือเป็น custom ทันที
+    // เพราะตอนนั้น setDatePreset("custom") ยังไม่ทันมีผลใน closure นี้
+    // (ไม่งั้นจะยิง preset เก่าแบบ force refresh แทนช่วงที่เลือก)
+    const isCustom = datePreset === "custom" || overrideDates !== undefined;
 
-    const cacheKey = datePreset === "custom" ? `insights_custom_${effectiveSince}_${effectiveUntil}` : `insights_${datePreset}`;
+    // For custom mode, require both dates
+    if (isCustom && (!effectiveSince || !effectiveUntil)) return;
+
+    const cacheKey = isCustom ? `insights_custom_${effectiveSince}_${effectiveUntil}` : `insights_${datePreset}`;
     if (!force) {
       try {
         const cached = sessionStorage.getItem(cacheKey);
@@ -275,7 +280,7 @@ export default function Dashboard() {
     setServerCacheHit(false);
     try {
       let url: string;
-      if (datePreset === "custom") {
+      if (isCustom) {
         url = `/api/insights?since=${effectiveSince}&until=${effectiveUntil}`;
       } else {
         url = `/api/insights?date_preset=${datePreset}`;
@@ -508,7 +513,8 @@ export default function Dashboard() {
                 setDatePreset("custom");
                 setCustomSince(s);
                 setCustomUntil(u);
-                load(true, { since: s, until: u });
+                // ไม่ force — ให้ server ตัดสินความสดเอง (ข้อมูลที่ sync แล้วตอบใน 1-3 วิ)
+                load(false, { since: s, until: u });
               }}
             />
             <button

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchAllCampaignMetadata, fetchAllInsights } from "@/lib/meta";
+import { fetchAccounts, fetchAllCampaignMetadata, type AdAccount, type AdInsight } from "@/lib/meta";
 import { dedupeAccounts, dedupeCampaigns, dedupeInsights } from "@/lib/dedupe";
 import { getServerCache } from "@/lib/server-cache";
 import { consumeApiRateLimit } from "@/lib/rate-limit";
 import { validateDateQuery } from "@/lib/request-validation";
 import { requireInternalApiAuth } from "@/lib/api-auth";
-import { getBranchMap, getTestBranchCodes, getTestBranchNames } from "@/lib/parser";
+import { getBranchMap, getTestBranchCodes, getTestBranchNames, parseAdName } from "@/lib/parser";
 import {
   aggregateDaily,
   calculatePacing,
@@ -16,6 +16,8 @@ import {
   sumReportingRows,
 } from "@/lib/reporting";
 import { createSnapshotId } from "@/lib/report-export";
+import { readInsightRows } from "@/lib/insights-store";
+import { ensureDailyAdNameSweep, syncRange } from "@/lib/insights-sync";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
 // หลัง cache หมดอายุ ยังเสิร์ฟข้อมูลเก่าได้อีก 1 ชม. ระหว่างรีเฟรชจาก Meta เบื้องหลัง
@@ -24,6 +26,31 @@ const CACHE_STALE_TTL_MS = 60 * 60 * 1000;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function toAdInsight(row: Awaited<ReturnType<typeof readInsightRows>>[number], accountName: string): AdInsight {
+  const parsed = parseAdName(row.adName);
+  return {
+    adName: row.adName,
+    parsed,
+    spend: row.spend,
+    impressions: row.impressions,
+    clicks: row.clicks,
+    reach: row.reach,
+    ctr: 0,
+    cpc: 0,
+    cpm: 0,
+    inbox: row.inbox,
+    cpi: row.inbox > 0 ? row.spend / row.inbox : 0,
+    leads: row.leads,
+    cpl: row.leads > 0 ? row.spend / row.leads : 0,
+    date: row.date,
+    accountId: row.accountId,
+    accountName,
+    adId: row.adId,
+    campaignId: row.campaignId,
+    adSetId: row.adSetId,
+  };
+}
 
 export async function GET(req: NextRequest) {
   const denied = requireInternalApiAuth(req);
@@ -73,6 +100,20 @@ export async function GET(req: NextRequest) {
       { since: customSince, until: customUntil }
     );
     const ranges = { current: periods.current, previous: periods.comparison };
+    const asOf = new Date(periods.asOf);
+
+    // รายชื่อบัญชีโฆษณาต่อ token — ถูกและไม่ผูกกับช่วงวันที่ cache ร่วมกันทุก preset
+    const accountResults = await Promise.all(
+      tokens.map((token, tokenIndex) =>
+        getServerCache(`accounts:${tokenIndex}`, CACHE_TTL_MS, () => fetchAccounts(token))
+      )
+    );
+    const accounts = dedupeAccounts(accountResults.flatMap((r) => r.value.accounts));
+    const accountIds = accounts.map((a) => a.id);
+    const accountNameById = new Map<string, string>(accounts.map((a: AdAccount) => [a.id, a.name]));
+    const accountFailures = accountResults.flatMap((r, tokenIndex) =>
+      r.value.failures.map((failure) => ({ ...failure, tokenIndex: tokenIndex + 1, period: "current" as const }))
+    );
 
     const cacheKey = [
       "insights",
@@ -81,44 +122,31 @@ export async function GET(req: NextRequest) {
       ranges.previous.since,
       ranges.previous.until,
     ].join(":");
-    // ช่วงปัจจุบันกับช่วงเทียบต่อเนื่องกัน (ช่วงเทียบจบก่อนช่วงปัจจุบันเริ่ม 1 วัน)
-    // → ดึงครั้งเดียวคลุมทั้งสองช่วงแล้วแยกแถวตามวันที่ ลดจำนวนคำขอ Meta ลงครึ่งหนึ่ง
-    // ช่วงที่มีช่องว่าง (เช่น MTD เทียบเดือนก่อน) ยังต้องดึงแยกเพราะดึงคลุมจะได้วันส่วนเกินมาก
-    const contiguousPeriods =
-      new Date(`${ranges.current.since}T00:00:00Z`).getTime() -
-        new Date(`${ranges.previous.until}T00:00:00Z`).getTime() ===
-      86_400_000;
 
     const cached = await getServerCache(cacheKey, CACHE_TTL_MS, async () => {
-      let currentResults: Awaited<ReturnType<typeof fetchAllInsights>>[];
-      let prevResults: Awaited<ReturnType<typeof fetchAllInsights>>[];
-      let campaignResults: Awaited<ReturnType<typeof fetchAllCampaignMetadata>>[];
-      if (contiguousPeriods) {
-        const [combinedResults, campaignData] = await Promise.all([
-          Promise.all(tokens.map((token) => fetchAllInsights(token, undefined, ranges.previous.since, ranges.current.until))),
-          Promise.all(tokens.map((token) => fetchAllCampaignMetadata(token))),
-        ]);
-        campaignResults = campaignData;
-        const isPreviousRow = (date: string) => date !== "" && date <= ranges.previous.until;
-        currentResults = combinedResults.map((r) => ({
-          ...r,
-          insights: r.insights.filter((row) => !isPreviousRow(row.date)),
-        }));
-        // failure ของการดึงรวมรายงานครั้งเดียวฝั่ง current เพื่อไม่ให้นับซ้ำสองช่วง
-        prevResults = combinedResults.map((r) => ({
-          ...r,
-          insights: r.insights.filter((row) => isPreviousRow(row.date)),
-          failures: [],
-        }));
-      } else {
-        [currentResults, prevResults, campaignResults] = await Promise.all([
-          Promise.all(tokens.map((token) => fetchAllInsights(token, undefined, ranges.current.since, ranges.current.until))),
-          Promise.all(tokens.map((token) => fetchAllInsights(token, undefined, ranges.previous.since, ranges.previous.until))),
-          Promise.all(tokens.map((token) => fetchAllCampaignMetadata(token))),
-        ]);
-      }
+      // กวาดชื่อแอดทั้งบัญชี (จับ rename ของแอดเก่า) วันละครั้ง — จังหวะจากตาราง sync_meta
+      const sweepFailures = await ensureDailyAdNameSweep(tokens);
 
-      const rawInsights = dedupeInsights(currentResults.flatMap((r) => r.insights));
+      // sync ทั้งสองช่วงพร้อมกัน: วันที่ final ที่ขาด + ช่วง recent ที่หมดอายุความสดเท่านั้น
+      // (ปกติหลัง sync รอบแรกของวัน ทั้งคู่เป็น no-op → เหลือแค่อ่าน Postgres)
+      // campaign metadata ไม่ผูกช่วงวันที่ — cache แยกต่อ token ใช้ร่วมกันทุก preset
+      const [currentSyncFailures, prevSyncFailures, campaignResults] = await Promise.all([
+        Promise.all(tokens.map((token) => syncRange(token, accountIds, ranges.current.since, ranges.current.until, asOf, forceRefresh))),
+        Promise.all(tokens.map((token) => syncRange(token, accountIds, ranges.previous.since, ranges.previous.until, asOf, forceRefresh))),
+        Promise.all(tokens.map((token, tokenIndex) =>
+          getServerCache(`campaigns:${tokenIndex}`, CACHE_TTL_MS, () => fetchAllCampaignMetadata(token), forceRefresh, { staleTtlMs: CACHE_STALE_TTL_MS }).then((r) => r.value)
+        )),
+      ]);
+
+      // อ่านครั้งเดียวต่อช่วง (ไม่ใช่ต่อ token) — ข้อมูลใน DB รวมของทุก token อยู่แล้ว
+      const [currentStored, previousStored] = await Promise.all([
+        readInsightRows(accountIds, ranges.current.since, ranges.current.until),
+        readInsightRows(accountIds, ranges.previous.since, ranges.previous.until),
+      ]);
+
+      const rawInsights = dedupeInsights(
+        currentStored.map((row) => toAdInsight(row, accountNameById.get(row.accountId) || row.accountId))
+      );
       const spendByCampaign = new Map<string, number>();
       for (const row of rawInsights) {
         const key = `${row.accountId}|${row.campaignId || ""}`;
@@ -135,7 +163,7 @@ export async function GET(req: NextRequest) {
         }
       }
       const campaignMap = new Map(campaigns.map((campaign) => [`${campaign.accountId}|${campaign.campaignId}`, campaign]));
-      const enrich = (rows: typeof currentResults[number]["insights"]) => rows.map((row) => {
+      const enrich = (rows: AdInsight[]) => rows.map((row) => {
         const campaign = campaignMap.get(`${row.accountId}|${row.campaignId || ""}`);
         return campaign
           ? {
@@ -151,17 +179,19 @@ export async function GET(req: NextRequest) {
           : row;
       });
       const insights = dedupeInsights(enrich(rawInsights));
-      const previousInsights = dedupeInsights(prevResults.flatMap((r) => r.insights));
-      const accounts = dedupeAccounts(currentResults.flatMap((r) => r.accounts));
+      const previousInsights = dedupeInsights(
+        previousStored.map((row) => toAdInsight(row, accountNameById.get(row.accountId) || row.accountId))
+      );
       const failures = [
-        ...currentResults.flatMap((r, tokenIndex) =>
-          r.failures.map((failure) => ({ ...failure, tokenIndex: tokenIndex + 1, period: "current" }))
+        ...sweepFailures.map((failure) => ({ ...failure, tokenIndex: 0, period: "current" as const })),
+        ...currentSyncFailures.flatMap((tokenFailures, tokenIndex) =>
+          tokenFailures.map((failure) => ({ ...failure, tokenIndex: tokenIndex + 1, period: "current" as const }))
         ),
-        ...prevResults.flatMap((r, tokenIndex) =>
-          r.failures.map((failure) => ({ ...failure, tokenIndex: tokenIndex + 1, period: "previous" }))
+        ...prevSyncFailures.flatMap((tokenFailures, tokenIndex) =>
+          tokenFailures.map((failure) => ({ ...failure, tokenIndex: tokenIndex + 1, period: "previous" as const }))
         ),
         ...campaignResults.flatMap((r, tokenIndex) =>
-          r.failures.map((failure) => ({ ...failure, tokenIndex: tokenIndex + 1, period: "current" }))
+          r.failures.map((failure) => ({ ...failure, tokenIndex: tokenIndex + 1, period: "current" as const }))
         ),
       ];
 
@@ -169,6 +199,7 @@ export async function GET(req: NextRequest) {
     }, forceRefresh, { staleTtlMs: CACHE_STALE_TTL_MS });
 
     const rows = cached.value.insights;
+    const allFailures = [...accountFailures, ...cached.value.failures];
     const totals = sumReportingRows(rows);
     const previousTotals = sumReportingRows(cached.value.previousInsights);
     const knownBranchCodes = new Set(Object.keys(getBranchMap()));
@@ -195,7 +226,7 @@ export async function GET(req: NextRequest) {
       const sample = metric.key === "unknown" ? 0 : groupTotals[metric.key];
       return { objective, optimizationGoal: optimizationGoal === "UNKNOWN" ? undefined : optimizationGoal, metric, totals: groupTotals, confidence: confidenceForSample(sample, metric.key === "impressions" ? groupTotals.impressions : sample, groupTotals.spend > 0) };
     });
-    const failureAccountIds = new Set(cached.value.failures.filter((failure) => failure.accountId).map((failure) => failure.accountId));
+    const failureAccountIds = new Set(allFailures.filter((failure) => failure.accountId).map((failure) => failure.accountId));
     const dailyBudget = cached.value.campaigns
       .filter((campaign) => campaign.budgetType === "daily")
       .reduce((sum, campaign) => sum + campaign.budget, 0);
@@ -246,12 +277,13 @@ export async function GET(req: NextRequest) {
       rows: rows.length,
       parsedRows: dimensions.filter((dimension) => dimension !== "unknown").length,
       unknownRows: dimensions.filter((dimension) => dimension === "unknown").length,
-      failureCount: cached.value.failures.length,
-      complete: cached.value.failures.length === 0,
+      failureCount: allFailures.length,
+      complete: allFailures.length === 0,
     };
 
     return NextResponse.json({
       ...cached.value,
+      failures: allFailures,
       asOf: periods.asOf,
       timezone: periods.timezone,
       generatedAt: new Date().toISOString(),

@@ -9,13 +9,16 @@
     "lint": "eslint",
     "check": "npm test && npx tsc --noEmit",
     "test": "npx --yes tsx --test tests/*.test.ts",
-    "refresh-checklist": "npx --yes tsx scripts/refresh-checklist.ts"
+    "refresh-checklist": "npx --yes tsx scripts/refresh-checklist.ts",
+    "migrate-insights-db": "npx --yes tsx scripts/migrate-insights-db.ts",
+    "backfill-insights": "npx --yes tsx scripts/backfill-insights.ts"
   },
   "dependencies": {
     "date-fns": "^4.3.0",
     "date-fns-tz": "^3.2.0",
     "lucide-react": "^1.16.0",
     "next": "16.2.6",
+    "pg": "^8.22.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "recharts": "^3.8.1"
@@ -23,6 +26,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.20.4",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

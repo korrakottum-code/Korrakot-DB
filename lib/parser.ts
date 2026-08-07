@@ -44,9 +44,21 @@ interface BranchConfig {
   branches: Record<string, BranchEntry>;
 }
 
+// parseAdName (via getBranchMap) can run on every row of a wide historical
+// read — tens of thousands of times per request once insights are served
+// from the persistent store instead of bounded by a live Meta fetch. A
+// synchronous disk read on every call doesn't scale to that, so cache the
+// parsed config for a short window; branch-config.json only changes via a
+// PR + redeploy anyway, which starts a fresh process (and fresh cache).
+const BRANCH_CONFIG_CACHE_MS = 60_000;
+let branchConfigCache: { value: BranchConfig; expiresAt: number } | null = null;
+
 function readBranchConfig(): BranchConfig {
   // Only run on server side
   if (typeof window !== "undefined") return { branches: {} };
+  if (branchConfigCache && branchConfigCache.expiresAt > Date.now()) {
+    return branchConfigCache.value;
+  }
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const fs = require("fs");
@@ -54,7 +66,9 @@ function readBranchConfig(): BranchConfig {
     const path = require("path");
     const configPath = path.join(process.cwd(), "data", "branch-config.json");
     const raw = fs.readFileSync(configPath, "utf-8");
-    return JSON.parse(raw);
+    const value = JSON.parse(raw);
+    branchConfigCache = { value, expiresAt: Date.now() + BRANCH_CONFIG_CACHE_MS };
+    return value;
   } catch {
     return { branches: {} };
   }

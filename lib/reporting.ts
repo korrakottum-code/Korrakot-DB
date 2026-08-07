@@ -166,17 +166,33 @@ export function getReportingPeriods(
       };
     }
     case "this_month": {
-      const currentSince = startOfMonth(today);
-      const comparisonEnd = previousMonthSameDay(today);
+      // เทียบเฉพาะวันที่จบแล้ว: 1..เมื่อวาน เทียบกับ 1..วันเดียวกันของเดือนก่อน
+      // (เช่น วันที่ 7 จะเทียบ 1-6 เดือนนี้ กับ 1-6 เดือนที่แล้ว)
+      if (today.getUTCDate() === 1) {
+        // วันแรกของเดือนยังไม่มีวันที่จบ — ใช้วันนี้แบบบางส่วนเทียบวันที่ 1 เดือนก่อน
+        const comparisonDay = previousMonthSameDay(today);
+        return {
+          timezone,
+          asOf,
+          current: period(today, today, true, dayFraction),
+          comparison: period(comparisonDay, comparisonDay, true, dayFraction),
+          comparisonMode: "month_to_date",
+          comparisonFair: true,
+          notes: ["วันแรกของเดือนยังไม่มีวันที่จบ จึงเทียบวันนี้ (บางส่วน) กับวันที่ 1 ของเดือนก่อน"],
+        };
+      }
+      const currentUntil = subDays(today, 1);
+      const currentSince = startOfMonth(currentUntil);
+      const comparisonEnd = previousMonthSameDay(currentUntil);
       const comparisonSince = startOfMonth(comparisonEnd);
       return {
         timezone,
         asOf,
-        current: period(currentSince, today, true, Math.max(1 / 1_440, daysInclusive(formatDate(currentSince), formatDate(today)) - 1 + dayFraction)),
-        comparison: period(comparisonSince, comparisonEnd, true, Math.max(1 / 1_440, daysInclusive(formatDate(comparisonSince), formatDate(comparisonEnd)) - 1 + dayFraction)),
+        current: period(currentSince, currentUntil),
+        comparison: period(comparisonSince, comparisonEnd),
         comparisonMode: "month_to_date",
         comparisonFair: true,
-        notes: ["เดือนนี้เทียบเดือนก่อนถึงวันเดียวกัน (MTD)", "เดือนที่มีจำนวนวันไม่เท่ากันจะถูกตัดถึงวันเดียวกัน"],
+        notes: ["เดือนนี้เทียบเดือนก่อน เฉพาะวันที่จบแล้ว (ไม่รวมวันนี้)", "เดือนที่มีจำนวนวันไม่เท่ากันจะถูกตัดถึงวันเดียวกัน"],
       };
     }
     case "last_month": {

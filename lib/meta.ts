@@ -3,8 +3,8 @@ import { fetchGraphPages } from "./pagination";
 import { META_GRAPH_API_BASE } from "./meta-version";
 
 
-/** Retry once after a delay when Meta returns a rate-limit error. Fast path is unchanged. */
-async function withRateLimitRetry<T>(fn: () => Promise<T>, retries = 1, delayMs = 3000): Promise<T> {
+/** Retry after a delay when Meta returns a rate-limit error. Fast path is unchanged. */
+async function withRateLimitRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 5000): Promise<T> {
   try {
     return await fn();
   } catch (err) {
@@ -15,6 +15,31 @@ async function withRateLimitRetry<T>(fn: () => Promise<T>, retries = 1, delayMs 
     }
     throw err;
   }
+}
+
+// Meta นับโควตาคำขอระดับ user แบบ burst — ยิงทุกบัญชีพร้อมกันทำให้ติด
+// "User request limit reached" จึงคุมจำนวนคำขอที่วิ่งพร้อมกันต่อ token
+const ACCOUNT_FETCH_CONCURRENCY = 4;
+
+async function mapSettledWithConcurrency<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>,
+  limit = ACCOUNT_FETCH_CONCURRENCY
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      try {
+        results[index] = { status: "fulfilled", value: await fn(items[index]) };
+      } catch (reason) {
+        results[index] = { status: "rejected", reason };
+      }
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 const META_API_BASE = META_GRAPH_API_BASE;
@@ -158,10 +183,8 @@ export async function fetchAllInsights(
     };
   }
 
-  const results = await Promise.allSettled(
-    accounts.map((acc) =>
-      withRateLimitRetry(() => fetchInsightsForAccount(acc.id, acc.name, token, datePreset, since, until))
-    )
+  const results = await mapSettledWithConcurrency(accounts, (acc) =>
+    withRateLimitRetry(() => fetchInsightsForAccount(acc.id, acc.name, token, datePreset, since, until))
   );
 
   const insights: AdInsight[] = [];
@@ -317,8 +340,7 @@ export async function fetchAllCampaignMetadata(
     };
   }
 
-  const results = await Promise.allSettled(
-    accounts.map((acc) =>
+  const results = await mapSettledWithConcurrency(accounts, (acc) =>
       withRateLimitRetry(async () => {
       const [budgets, adSetGoals] = await Promise.all([fetchCampaignBudgets(acc.id, token), fetchAdSetOptimizationGoals(acc.id, token)]);
       const campaigns = budgets.map((budget): CampaignRow => ({
@@ -339,7 +361,6 @@ export async function fetchAllCampaignMetadata(
       }));
       return { campaigns, adSetGoals };
     })
-  )
   );
 
   const campaigns: CampaignRow[] = [];
@@ -379,8 +400,7 @@ export async function fetchAllCampaignData(
     };
   }
 
-  const results = await Promise.allSettled(
-    accounts.map((acc) =>
+  const results = await mapSettledWithConcurrency(accounts, (acc) =>
       withRateLimitRetry(async () => {
       const [insightsRaw, budgetsRaw] = await Promise.all([
         fetchCampaignInsights(acc.id, token, datePreset, since, until),
@@ -428,7 +448,6 @@ export async function fetchAllCampaignData(
         };
       });
     })
-  )
   );
 
   const campaigns: CampaignRow[] = [];

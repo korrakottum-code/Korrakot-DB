@@ -81,13 +81,42 @@ export async function GET(req: NextRequest) {
       ranges.previous.since,
       ranges.previous.until,
     ].join(":");
+    // ช่วงปัจจุบันกับช่วงเทียบต่อเนื่องกัน (ช่วงเทียบจบก่อนช่วงปัจจุบันเริ่ม 1 วัน)
+    // → ดึงครั้งเดียวคลุมทั้งสองช่วงแล้วแยกแถวตามวันที่ ลดจำนวนคำขอ Meta ลงครึ่งหนึ่ง
+    // ช่วงที่มีช่องว่าง (เช่น MTD เทียบเดือนก่อน) ยังต้องดึงแยกเพราะดึงคลุมจะได้วันส่วนเกินมาก
+    const contiguousPeriods =
+      new Date(`${ranges.current.since}T00:00:00Z`).getTime() -
+        new Date(`${ranges.previous.until}T00:00:00Z`).getTime() ===
+      86_400_000;
+
     const cached = await getServerCache(cacheKey, CACHE_TTL_MS, async () => {
-      // Fetch current and previous period insights concurrently.
-      const [currentResults, prevResults, campaignResults] = await Promise.all([
-        Promise.all(tokens.map((token) => fetchAllInsights(token, undefined, ranges.current.since, ranges.current.until))),
-        Promise.all(tokens.map((token) => fetchAllInsights(token, undefined, ranges.previous.since, ranges.previous.until))),
-        Promise.all(tokens.map((token) => fetchAllCampaignMetadata(token))),
-      ]);
+      let currentResults: Awaited<ReturnType<typeof fetchAllInsights>>[];
+      let prevResults: Awaited<ReturnType<typeof fetchAllInsights>>[];
+      let campaignResults: Awaited<ReturnType<typeof fetchAllCampaignMetadata>>[];
+      if (contiguousPeriods) {
+        const [combinedResults, campaignData] = await Promise.all([
+          Promise.all(tokens.map((token) => fetchAllInsights(token, undefined, ranges.previous.since, ranges.current.until))),
+          Promise.all(tokens.map((token) => fetchAllCampaignMetadata(token))),
+        ]);
+        campaignResults = campaignData;
+        const isPreviousRow = (date: string) => date !== "" && date <= ranges.previous.until;
+        currentResults = combinedResults.map((r) => ({
+          ...r,
+          insights: r.insights.filter((row) => !isPreviousRow(row.date)),
+        }));
+        // failure ของการดึงรวมรายงานครั้งเดียวฝั่ง current เพื่อไม่ให้นับซ้ำสองช่วง
+        prevResults = combinedResults.map((r) => ({
+          ...r,
+          insights: r.insights.filter((row) => isPreviousRow(row.date)),
+          failures: [],
+        }));
+      } else {
+        [currentResults, prevResults, campaignResults] = await Promise.all([
+          Promise.all(tokens.map((token) => fetchAllInsights(token, undefined, ranges.current.since, ranges.current.until))),
+          Promise.all(tokens.map((token) => fetchAllInsights(token, undefined, ranges.previous.since, ranges.previous.until))),
+          Promise.all(tokens.map((token) => fetchAllCampaignMetadata(token))),
+        ]);
+      }
 
       const rawInsights = dedupeInsights(currentResults.flatMap((r) => r.insights));
       const spendByCampaign = new Map<string, number>();

@@ -18,6 +18,13 @@ import {
 
 export type ConfigKind = "branch" | "program" | "sub";
 
+/** รหัสหมวดย่อยมาตรฐาน = โปรแกรม + เลข 2 หลักแบบเดียวกับ ad name จริง (B2 → B02, ALL3 → ALL03) */
+export function normalizeSubCode(code: string): string {
+  const m = code.trim().toUpperCase().match(/^([A-Z]+)(\d{1,2})$/);
+  if (!m) return code.trim().toUpperCase();
+  return `${m[1]}${m[2].padStart(2, "0")}`;
+}
+
 let schemaReady = false;
 
 async function ensureSchema(): Promise<void> {
@@ -47,9 +54,13 @@ async function seedKindIfEmpty(kind: ConfigKind): Promise<void> {
     for (const [code, name] of Object.entries(BRANCH_MAP)) merged[code] = { name, isTest: false };
     for (const [code, entry] of Object.entries(fileConfig.branches)) merged[code] = { name: entry.name, isTest: entry.isTest };
     for (const [code, entry] of Object.entries(merged)) entries.push({ code, name: entry.name, isTest: entry.isTest });
+  } else if (kind === "program") {
+    for (const [code, name] of Object.entries(PROGRAM_MAP)) entries.push({ code, name, isTest: false });
   } else {
-    const source = kind === "program" ? PROGRAM_MAP : SUB_MAP;
-    for (const [code, name] of Object.entries(source)) entries.push({ code, name, isTest: false });
+    // คีย์ hardcode เดิมเป็นแบบไม่มีศูนย์ (B2) แต่มาตรฐานใน DB คือแบบเดียวกับ ad name จริง (B02)
+    for (const [code, name] of Object.entries(SUB_MAP)) {
+      entries.push({ code: normalizeSubCode(code), name, isTest: false });
+    }
   }
 
   for (const entry of entries) {

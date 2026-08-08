@@ -320,12 +320,13 @@ export function parseAdName(adName: string): ParsedAdName {
 
   const asset = ASSET_MAP[assetCode] || assetCode;
   const program = getProgramMap()[programCode] || programCode;
-  // ad จริงเขียนเลขหมวดแบบมีศูนย์นำหน้า (PF02) แต่คีย์ใน SUB_MAP เป็นแบบไม่มีศูนย์ (F2)
-  // — lookup ทั้งสองแบบ ไม่งั้นชื่อหมวดย่อยไม่เคยเจอ
+  // รหัสหมวดย่อยมาตรฐาน = แบบเดียวกับใน ad name จริง คือเลข 2 หลัก (B02, ALL03)
+  // ลอง lookup ตามลำดับ: แบบ 2 หลัก (มาตรฐานใน DB) → ตามที่เขียนมาจริง → แบบไม่มีศูนย์ (คีย์เก่าใน hardcode)
   const subMap = getSubMap();
-  const subKey = `${programCode}${subCode}`;
+  const subKeyPadded = `${programCode}${subCode.padStart(2, "0")}`;
+  const subKeyRaw = `${programCode}${subCode}`;
   const subKeyUnpadded = `${programCode}${String(parseInt(subCode, 10) || 0)}`;
-  const sub = subMap[subKey] || subMap[subKeyUnpadded] || subCode;
+  const sub = subMap[subKeyPadded] || subMap[subKeyRaw] || subMap[subKeyUnpadded] || subCode;
 
   const serviceCode = `${programCode}${subCode.padStart(2, "0")}`;
   const service = sub && sub !== "รวม" ? `${program} ${sub}` : program;

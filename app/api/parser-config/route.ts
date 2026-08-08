@@ -7,6 +7,7 @@ import {
   readParserConfig,
   upsertParserConfig,
   deleteParserConfig,
+  normalizeSubCode,
   type ConfigKind,
 } from "@/lib/parser-config-store";
 import { PROGRAM_MAP, SUB_MAP } from "@/lib/parser";
@@ -71,7 +72,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "รูปแบบคำขอไม่ถูกต้อง" }, { status: 400 });
   }
   const kind = parseKind(body.kind);
-  const code = String(body.code || "").trim().toUpperCase();
+  let code = String(body.code || "").trim().toUpperCase();
   const name = String(body.name || "").trim();
   if (!kind) {
     return NextResponse.json({ error: "kind ต้องเป็น program หรือ sub" }, { status: 400 });
@@ -79,12 +80,16 @@ export async function POST(req: NextRequest) {
   if (!code || !name) {
     return NextResponse.json({ error: "กรุณาระบุรหัสและชื่อ" }, { status: 400 });
   }
-  // program = ตัวอักษรล้วน (เช่น F, ALL) / sub = โปรแกรม+เลข (เช่น F2, ALL3)
+  // program = ตัวอักษรล้วน (เช่น F, ALL) / sub = โปรแกรม+เลข 2 หลักตาม ad name จริง (เช่น B02, ALL03)
   if (kind === "program" && !/^[A-Z]{1,10}$/.test(code)) {
     return NextResponse.json({ error: "รหัสโปรแกรมต้องเป็นตัวอักษร A-Z ล้วน (เช่น F, ALL)" }, { status: 400 });
   }
-  if (kind === "sub" && !/^[A-Z]{1,10}\d{1,2}$/.test(code)) {
-    return NextResponse.json({ error: "รหัสหมวดย่อยต้องเป็นโปรแกรม+เลข (เช่น F2, ALL3)" }, { status: 400 });
+  if (kind === "sub") {
+    if (!/^[A-Z]{1,10}\d{1,2}$/.test(code)) {
+      return NextResponse.json({ error: "รหัสหมวดย่อยต้องเป็นโปรแกรม+เลข (เช่น B02, ALL03)" }, { status: 400 });
+    }
+    // เก็บเป็นเลข 2 หลักเสมอให้ตรงกับรหัสใน ad name (B2 → B02) กันรายการซ้ำสองรูปแบบ
+    code = normalizeSubCode(code);
   }
   if (name.length > 100) {
     return NextResponse.json({ error: "ชื่อยาวเกินไป" }, { status: 400 });
@@ -108,10 +113,11 @@ export async function DELETE(req: NextRequest) {
   if (denied) return denied;
 
   const kind = parseKind(req.nextUrl.searchParams.get("kind"));
-  const code = String(req.nextUrl.searchParams.get("code") || "").trim().toUpperCase();
+  let code = String(req.nextUrl.searchParams.get("code") || "").trim().toUpperCase();
   if (!kind || !code) {
     return NextResponse.json({ error: "กรุณาระบุ kind และ code" }, { status: 400 });
   }
+  if (kind === "sub") code = normalizeSubCode(code);
 
   try {
     await deleteParserConfig(kind, code);

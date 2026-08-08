@@ -251,8 +251,8 @@ export default function ParserMapSettings() {
       <MapSection
         kind="sub"
         title="หมวดย่อย"
-        description="รหัสหมวดย่อย = โปรแกรม+เลข เช่น F2 = ฟิลเลอร์ ปาก, ALL3 = โปรรวม ผ่อน0%"
-        codeHint="รหัส เช่น F2, ALL3"
+        description="รหัสหมวดย่อย = โปรแกรม+เลข 2 หลัก ตรงกับรหัสใน ad name เช่น B02 = โบท็อกซ์ กราม, ALL03 = โปรรวม ผ่อน0% (พิมพ์ B2 ระบบจะเก็บเป็น B02 ให้)"
+        codeHint="รหัส เช่น B02, ALL03"
         icon={<Tags className="w-4 h-4 text-purple-400" />}
         entries={subs}
         writable={writable}

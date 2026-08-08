@@ -32,17 +32,34 @@ test("primed DB config overrides program and sub names in parseAdName", () => {
   withDbConfig(
     {
       branches: { KKC: { name: "กังสดาล", isTest: false } },
-      programs: { F: "ฟิลเลอร์พรีเมียม", X: "โปรแกรมใหม่" },
-      subs: { F2: "ริมฝีปาก" },
+      // รหัสหมวดย่อยใน DB เก็บแบบเดียวกับ ad name จริง (เลข 2 หลัก เช่น F02, B02)
+      programs: { F: "ฟิลเลอร์พรีเมียม", B: "โบท็อกซ์", X: "โปรแกรมใหม่" },
+      subs: { F02: "ริมฝีปาก", B02: "กราม" },
     },
     () => {
       const parsed = parseAdName("KKC PF02-0368");
       assert.equal(parsed.program, "ฟิลเลอร์พรีเมียม");
       assert.equal(parsed.sub, "ริมฝีปาก");
 
+      const jaw = parseAdName("KKC PB02-0166");
+      assert.equal(jaw.sub, "กราม");
+
       // โปรแกรมใหม่ที่ไม่เคยมีใน hardcode ก็ต้องรู้จัก
       const newProg = parseAdName("KKC PX01-0001");
       assert.equal(newProg.program, "โปรแกรมใหม่");
+    }
+  );
+});
+
+test("legacy unpadded DB sub keys still resolve (B2 matches ad code PB02)", () => {
+  withDbConfig(
+    {
+      branches: { KKC: { name: "กังสดาล", isTest: false } },
+      programs: {},
+      subs: { B2: "กราม" },
+    },
+    () => {
+      assert.equal(parseAdName("KKC PB02-0166").sub, "กราม");
     }
   );
 });
@@ -78,6 +95,17 @@ test("empty DB maps fall back per-map (branches from DB, programs from hardcode)
       // programs ว่าง → ใช้ hardcode
       assert.equal(getProgramMap().F, PROGRAM_MAP.F);
       assert.equal(getSubMap().F2, "ปาก");
+      // คีย์ hardcode เป็นแบบไม่มีศูนย์ แต่ ad จริงเขียน PF02 — ต้องเจอชื่อได้
+      assert.equal(parseAdName("KKC PF02-0368").sub, "ปาก");
     }
   );
+});
+
+test("normalizeSubCode pads to two digits matching real ad codes", async () => {
+  const { normalizeSubCode } = await import("../lib/parser-config-store.ts");
+  assert.equal(normalizeSubCode("B2"), "B02");
+  assert.equal(normalizeSubCode("b02"), "B02");
+  assert.equal(normalizeSubCode("ALL3"), "ALL03");
+  assert.equal(normalizeSubCode("ALL10"), "ALL10");
+  assert.equal(normalizeSubCode("F"), "F"); // ไม่มีเลข — คืนตามเดิม
 });

@@ -44,6 +44,24 @@ interface BranchConfig {
   branches: Record<string, BranchEntry>;
 }
 
+/* ─── Dynamic config from Postgres (แก้ได้จากหน้า /settings) ─── */
+
+export interface ParserConfigData {
+  branches: Record<string, BranchEntry>;
+  programs: Record<string, string>;
+  subs: Record<string, string>;
+}
+
+// cache ที่ hydrateParserConfig() (lib/parser-config-store) เติมให้ฝั่ง server
+// — เมื่อมีข้อมูลจาก DB จะใช้เป็นแหล่งความจริงแทน hardcode/JSON ทั้งชุด
+// (จึงลบรายการที่เคย hardcode ได้จริง) ฝั่ง client cache เป็น null เสมอ → ใช้ fallback เดิม
+let dbParserConfig: ParserConfigData | null = null;
+
+/** เติม/ล้าง cache config จาก DB — เรียกจาก lib/parser-config-store เท่านั้น */
+export function primeParserMaps(data: ParserConfigData | null): void {
+  dbParserConfig = data;
+}
+
 // parseAdName (via getBranchMap) can run on every row of a wide historical
 // read — tens of thousands of times per request once insights are served
 // from the persistent store instead of bounded by a live Meta fetch. A
@@ -74,26 +92,39 @@ function readBranchConfig(): BranchConfig {
   }
 }
 
+/** อ่าน branch-config.json ตรงๆ (ไว้ให้ parser-config-store ใช้ seed ข้อมูลรอบแรก) */
+export function readBranchConfigFile(): BranchConfig {
+  return readBranchConfig();
+}
+
+/** branch map ที่มีผลจริง: DB (ถ้า hydrate แล้ว) > JSON > hardcode */
+function effectiveBranchEntries(): Record<string, BranchEntry> {
+  if (dbParserConfig && Object.keys(dbParserConfig.branches).length > 0) {
+    return dbParserConfig.branches;
+  }
+  const config = readBranchConfig();
+  const merged: Record<string, BranchEntry> = {};
+  for (const [code, name] of Object.entries(BRANCH_MAP)) merged[code] = { name, isTest: false };
+  for (const [code, entry] of Object.entries(config.branches)) merged[code] = entry;
+  return merged;
+}
+
 /**
- * Returns the merged branch map: hardcoded BRANCH_MAP + JSON config.
- * JSON config overrides hardcoded values.
+ * Returns the effective branch map (DB config > JSON config > hardcoded).
  */
 export function getBranchMap(): Record<string, string> {
-  const config = readBranchConfig();
-  const merged = { ...BRANCH_MAP };
-  for (const [code, entry] of Object.entries(config.branches)) {
-    merged[code] = entry.name;
-  }
-  return merged;
+  const entries = effectiveBranchEntries();
+  const map: Record<string, string> = {};
+  for (const [code, entry] of Object.entries(entries)) map[code] = entry.name;
+  return map;
 }
 
 /**
  * Returns a Set of branch codes that are marked as test branches.
  */
 export function getTestBranchCodes(): Set<string> {
-  const config = readBranchConfig();
   const testCodes = new Set<string>();
-  for (const [code, entry] of Object.entries(config.branches)) {
+  for (const [code, entry] of Object.entries(effectiveBranchEntries())) {
     if (entry.isTest) testCodes.add(code);
   }
   return testCodes;
@@ -103,12 +134,27 @@ export function getTestBranchCodes(): Set<string> {
  * Returns a Set of branch names that are marked as test branches.
  */
 export function getTestBranchNames(): Set<string> {
-  const config = readBranchConfig();
   const testNames = new Set<string>();
-  for (const [, entry] of Object.entries(config.branches)) {
+  for (const [, entry] of Object.entries(effectiveBranchEntries())) {
     if (entry.isTest) testNames.add(entry.name);
   }
   return testNames;
+}
+
+/** program map ที่มีผลจริง: DB (ถ้า hydrate แล้ว) > hardcode */
+export function getProgramMap(): Record<string, string> {
+  if (dbParserConfig && Object.keys(dbParserConfig.programs).length > 0) {
+    return dbParserConfig.programs;
+  }
+  return PROGRAM_MAP;
+}
+
+/** sub map ที่มีผลจริง: DB (ถ้า hydrate แล้ว) > hardcode */
+export function getSubMap(): Record<string, string> {
+  if (dbParserConfig && Object.keys(dbParserConfig.subs).length > 0) {
+    return dbParserConfig.subs;
+  }
+  return SUB_MAP;
 }
 
 // Asset (campaign type) codes
@@ -273,9 +319,13 @@ export function parseAdName(adName: string): ParsedAdName {
   }
 
   const asset = ASSET_MAP[assetCode] || assetCode;
-  const program = PROGRAM_MAP[programCode] || programCode;
+  const program = getProgramMap()[programCode] || programCode;
+  // ad จริงเขียนเลขหมวดแบบมีศูนย์นำหน้า (PF02) แต่คีย์ใน SUB_MAP เป็นแบบไม่มีศูนย์ (F2)
+  // — lookup ทั้งสองแบบ ไม่งั้นชื่อหมวดย่อยไม่เคยเจอ
+  const subMap = getSubMap();
   const subKey = `${programCode}${subCode}`;
-  const sub = SUB_MAP[subKey] || subCode;
+  const subKeyUnpadded = `${programCode}${String(parseInt(subCode, 10) || 0)}`;
+  const sub = subMap[subKey] || subMap[subKeyUnpadded] || subCode;
 
   const serviceCode = `${programCode}${subCode.padStart(2, "0")}`;
   const service = sub && sub !== "รวม" ? `${program} ${sub}` : program;

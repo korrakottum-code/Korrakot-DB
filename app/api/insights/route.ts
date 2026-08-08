@@ -17,6 +17,7 @@ import {
 } from "@/lib/reporting";
 import { createSnapshotId } from "@/lib/report-export";
 import { getEffectiveSettlingWindow, logSyncError, readInsightRows, recentWindowState, splitDateRange } from "@/lib/insights-store";
+import { hydrateParserConfig } from "@/lib/parser-config-store";
 import { ensureDailyAdNameSweep, RECENT_SYNC_MAX_AGE_MS, syncRange } from "@/lib/insights-sync";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -95,6 +96,10 @@ export async function GET(req: NextRequest) {
       );
     }
   }
+
+  // โหลด mapping สาขา/โปรแกรม/หมวดย่อยจาก DB เข้า cache ก่อน parse ชื่อแอด
+  // (แก้จากหน้า /settings แล้วมีผลกับข้อมูลทุกแถว; ถ้า DB มีปัญหาใช้ค่า fallback เดิม)
+  await hydrateParserConfig();
 
   try {
     const periods = getReportingPeriods(

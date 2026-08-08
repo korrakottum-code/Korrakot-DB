@@ -108,6 +108,11 @@ function chunk<T>(items: T[], size: number): T[][] {
 
 let pool: Pool | null = null;
 
+/** Pool กลางของแอป — ให้ store อื่น (เช่น parser-config-store) ใช้ connection เดียวกัน */
+export function getSharedPool(): Pool {
+  return getPool();
+}
+
 function getPool(): Pool {
   if (!pool) {
     const connectionString = process.env.POSTGRES_URL;

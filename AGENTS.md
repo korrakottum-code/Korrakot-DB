@@ -4,6 +4,16 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# Project Identity
+
+**Korrakot DB คือ Ad database/dashboard ของ Class Clinic เท่านั้น** — ระบบนี้จัดการข้อมูลโฆษณา Meta Ads (insights, creative checklist, parser config) และใช้ Postgres ของตัวเองผ่าน `POSTGRES_URL` (Vercel Postgres)
+
+**ไม่มีส่วนเกี่ยวข้องใดๆ กับ:**
+- **QLASS** (Supabase project — ระบบหลังบ้านคลินิก: คิว, ข้อมูลลูกค้า, ห้อง, พนักงาน)
+- **Marktech OS** (Supabase project อื่น)
+
+ห้ามเชื่อมต่อ, อ่าน, เขียน หรืออ้างอิงฐานข้อมูลของระบบเหล่านั้นจากโปรเจกต์นี้โดยเด็ดขาด
+
 <!-- BEGIN:git-workflow-rules -->
 # Git Workflow — MANDATORY
 

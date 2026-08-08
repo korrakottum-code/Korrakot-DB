@@ -29,7 +29,8 @@ let schemaReady = false;
 
 async function ensureSchema(): Promise<void> {
   if (schemaReady) return;
-  await getSharedPool().query(`
+  const pool = getSharedPool();
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS parser_config (
       kind TEXT NOT NULL CHECK (kind IN ('branch', 'program', 'sub')),
       code TEXT NOT NULL,
@@ -38,6 +39,20 @@ async function ensureSchema(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       PRIMARY KEY (kind, code)
     );
+  `);
+  // แปลงรหัสหมวดย่อยตกค้างแบบเลขหลักเดียว (B2) เป็นแบบ 2 หลักตาม ad name จริง (B02)
+  // — ตารางอาจถูก seed ไปก่อนที่กติกานี้จะมีผล ทำครั้งเดียวต่อ process, idempotent
+  await pool.query(`
+    DELETE FROM parser_config p
+    WHERE kind = 'sub' AND code ~ '^[A-Z]+[0-9]$'
+      AND EXISTS (
+        SELECT 1 FROM parser_config q
+        WHERE q.kind = 'sub' AND q.code = regexp_replace(p.code, '^([A-Z]+)([0-9])$', '\\10\\2')
+      );
+  `);
+  await pool.query(`
+    UPDATE parser_config SET code = regexp_replace(code, '^([A-Z]+)([0-9])$', '\\10\\2')
+    WHERE kind = 'sub' AND code ~ '^[A-Z]+[0-9]$';
   `);
   schemaReady = true;
 }

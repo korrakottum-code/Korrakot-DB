@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import LogoutButton from "@/components/LogoutButton";
+import ParserMapSettings from "@/components/ParserMapSettings";
 
 interface BranchEntry {
   name: string;
@@ -32,8 +33,8 @@ export default function BranchSettings() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [search, setSearch] = useState("");
-  // Branch configuration is managed through reviewed Pull Requests.
-  const readOnly = true;
+  // แก้ไขได้เมื่อ backend ต่อ Postgres แล้ว (API ส่ง writable กลับมา) — ไม่งั้นเป็นโหมดอ่านอย่างเดียว
+  const [readOnly, setReadOnly] = useState(true);
 
   // New branch form
   const [newCode, setNewCode] = useState("");
@@ -51,6 +52,7 @@ export default function BranchSettings() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setBranches(data.branches || {});
+      setReadOnly(data.writable !== true);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "โหลดข้อมูลไม่สำเร็จ");
     } finally {
@@ -236,16 +238,18 @@ export default function BranchSettings() {
           </div>
         )}
 
-        {/* Read-only banner */}
-        <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-4 flex items-start gap-3">
+        {/* Read-only banner (เฉพาะตอนยังไม่ได้ต่อ Postgres) */}
+        {readOnly && (
+          <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-4 flex items-start gap-3">
             <Lock className="w-5 h-5 text-slate-400 mt-0.5 flex-shrink-0" />
             <div>
               <p className="text-sm font-medium text-slate-200">โหมดอ่านอย่างเดียว</p>
               <p className="text-xs text-slate-400 mt-1">
-                การแก้ไขสาขาต้องทำผ่าน Pull Request โดยแก้ไฟล์ <code className="bg-slate-700 px-1.5 py-0.5 rounded text-slate-300">data/branch-config.json</code> แล้ว deploy ใหม่
+                ยังไม่ได้ตั้งค่า <code className="bg-slate-700 px-1.5 py-0.5 rounded text-slate-300">POSTGRES_URL</code> — การแก้ไขสาขาต้องทำผ่าน Pull Request โดยแก้ไฟล์ <code className="bg-slate-700 px-1.5 py-0.5 rounded text-slate-300">data/branch-config.json</code> แล้ว deploy ใหม่
               </p>
             </div>
-        </div>
+          </div>
+        )}
 
         {/* Search + Add button */}
         <div className="flex items-center gap-3">
@@ -427,12 +431,17 @@ export default function BranchSettings() {
         </div>
 
         {/* Info */}
+        {/* โปรแกรม / หมวดย่อย */}
+        <ParserMapSettings />
+
         <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 text-xs text-slate-400 space-y-2">
           <p className="font-medium text-slate-300">💡 คำแนะนำ</p>
           <ul className="list-disc list-inside space-y-1">
             <li>สาขาที่ถูก mark เป็น <span className="text-amber-300 font-medium">&quot;เทส&quot;</span> จะถูกซ่อนจาก Dashboard โดย default</li>
-            <li>รหัสย่อและชื่อสาขาจะแก้ไขผ่าน Pull Request เท่านั้น</li>
-            <li>เมื่อระบบจับ branch code ใหม่ได้ จะแสดงเป็น warning บน Dashboard — จากนั้นแก้ไฟล์ config แล้ว deploy ใหม่</li>
+            <li>{readOnly
+              ? "รหัสย่อและชื่อสาขาจะแก้ไขผ่าน Pull Request เท่านั้น (ยังไม่ได้ต่อฐานข้อมูล)"
+              : "การแก้ไขบันทึกลงฐานข้อมูลและมีผลกับข้อมูลใหม่ภายใน ~1 นาที (ไม่ต้อง deploy ใหม่)"}</li>
+            <li>เมื่อระบบจับ branch code ใหม่ได้ จะแสดงเป็น warning บน Dashboard — เพิ่มรหัสนั้นที่หน้านี้ได้เลย</li>
           </ul>
         </div>
       </div>

@@ -12,6 +12,7 @@ import {
   DollarSign,
   MessageSquare,
   TrendingDown,
+  Users,
   Wallet,
   LayoutList,
   Tag,
@@ -50,7 +51,7 @@ const DATE_PRESETS = [
   { label: "เดือนที่แล้ว", value: "last_month" },
 ];
 
-type SortCol = "accountId" | "campaignName" | "spent" | "budget" | "inbox" | "cpi" | "tag";
+type SortCol = "accountId" | "campaignName" | "spent" | "budget" | "inbox" | "cpi" | "leads" | "cpl" | "tag";
 type SortDir = "asc" | "desc";
 
 interface MetricFilter {
@@ -144,6 +145,8 @@ export default function AdsPage() {
   const [budgetFilter, setBudgetFilter] = useState<MetricFilter>(EMPTY_METRIC);
   const [inboxFilter, setInboxFilter] = useState<MetricFilter>(EMPTY_METRIC);
   const [cpiFilter, setCpiFilter] = useState<MetricFilter>(EMPTY_METRIC);
+  const [leadsFilter, setLeadsFilter] = useState<MetricFilter>(EMPTY_METRIC);
+  const [cplFilter, setCplFilter] = useState<MetricFilter>(EMPTY_METRIC);
   const [tagFilter, setTagFilter] = useState("all"); // "all" | "untagged" | specific tag
 
   // Tags
@@ -289,9 +292,12 @@ export default function AdsPage() {
       if (!matchRange(c.inbox, inboxFilter)) return false;
       if (c.inbox > 0 && !matchRange(c.cpi, cpiFilter)) return false;
       if (c.inbox === 0 && cpiFilter.max !== "") return false; // no inbox → CPI infinite → exclude if max is set
+      if (!matchRange(c.leads, leadsFilter)) return false;
+      if (c.leads > 0 && !matchRange(c.cpl, cplFilter)) return false;
+      if (c.leads === 0 && cplFilter.max !== "") return false; // no leads → CPL infinite → exclude if max is set
       return true;
     });
-  }, [campaigns, search, accountFilter, tagFilter, tags, spentFilter, budgetFilter, inboxFilter, cpiFilter]);
+  }, [campaigns, search, accountFilter, tagFilter, tags, spentFilter, budgetFilter, inboxFilter, cpiFilter, leadsFilter, cplFilter]);
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
@@ -323,6 +329,14 @@ export default function AdsPage() {
           av = a.inbox > 0 ? a.cpi : Infinity;
           bv = b.inbox > 0 ? b.cpi : Infinity;
           break;
+        case "leads":
+          av = a.leads;
+          bv = b.leads;
+          break;
+        case "cpl":
+          av = a.leads > 0 ? a.cpl : Infinity;
+          bv = b.leads > 0 ? b.cpl : Infinity;
+          break;
         case "tag":
           av = tags[a.campaignId] || "";
           bv = tags[b.campaignId] || "";
@@ -345,6 +359,8 @@ export default function AdsPage() {
   const totalBudget = filtered.reduce((s, c) => s + c.budget, 0);
   const totalInbox = filtered.reduce((s, c) => s + c.inbox, 0);
   const avgCPI = totalInbox > 0 ? totalSpent / totalInbox : 0;
+  const totalLeads = filtered.reduce((s, c) => s + c.leads, 0);
+  const avgCPL = totalLeads > 0 ? totalSpent / totalLeads : 0;
 
   /* ── sort handler ───────────────────────────── */
 
@@ -353,7 +369,7 @@ export default function AdsPage() {
       setSortDir((d) => (d === "desc" ? "asc" : "desc"));
     } else {
       setSortCol(col);
-      setSortDir(col === "cpi" ? "asc" : "desc");
+      setSortDir(col === "cpi" || col === "cpl" ? "asc" : "desc");
     }
   };
 
@@ -367,13 +383,19 @@ export default function AdsPage() {
     inboxFilter.min !== "" ||
     inboxFilter.max !== "" ||
     cpiFilter.min !== "" ||
-    cpiFilter.max !== "";
+    cpiFilter.max !== "" ||
+    leadsFilter.min !== "" ||
+    leadsFilter.max !== "" ||
+    cplFilter.min !== "" ||
+    cplFilter.max !== "";
 
   const clearMetricFilters = () => {
     setSpentFilter(EMPTY_METRIC);
     setBudgetFilter(EMPTY_METRIC);
     setInboxFilter(EMPTY_METRIC);
     setCpiFilter(EMPTY_METRIC);
+    setLeadsFilter(EMPTY_METRIC);
+    setCplFilter(EMPTY_METRIC);
   };
 
   /* ── render ─────────────────────────────────── */
@@ -456,7 +478,7 @@ export default function AdsPage() {
         )}
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
           {[
             {
               label: "Total Spent",
@@ -485,6 +507,20 @@ export default function AdsPage() {
               icon: TrendingDown,
               color: "text-amber-400",
               tint: "bg-amber-500/15",
+            },
+            {
+              label: "Total Lead",
+              value: fmt(totalLeads),
+              icon: Users,
+              color: "text-pink-400",
+              tint: "bg-pink-500/15",
+            },
+            {
+              label: "Avg CPL",
+              value: totalLeads > 0 ? fmtB(avgCPL) : "-",
+              icon: TrendingDown,
+              color: "text-rose-400",
+              tint: "bg-rose-500/15",
             },
           ].map((card) => (
             <div
@@ -599,6 +635,8 @@ export default function AdsPage() {
                   { label: "Budget (฿)", state: budgetFilter, setter: setBudgetFilter },
                   { label: "Inbox", state: inboxFilter, setter: setInboxFilter },
                   { label: "CPI (฿)", state: cpiFilter, setter: setCpiFilter },
+                  { label: "Lead", state: leadsFilter, setter: setLeadsFilter },
+                  { label: "CPL (฿)", state: cplFilter, setter: setCplFilter },
                 ] as const
               ).map(({ label, state, setter }) => (
                 <div key={label} className="space-y-1.5">
@@ -660,6 +698,8 @@ export default function AdsPage() {
                         { col: "budget" as SortCol, label: "Budget", align: "right" },
                         { col: "inbox" as SortCol, label: "Inbox", align: "right" },
                         { col: "cpi" as SortCol, label: "CPI", align: "right" },
+                        { col: "leads" as SortCol, label: "Lead", align: "right" },
+                        { col: "cpl" as SortCol, label: "CPL", align: "right" },
                       ] as const
                     ).map(({ col, label, align }) => (
                       <th
@@ -806,6 +846,24 @@ export default function AdsPage() {
                             }`}
                           >
                             ฿{row.cpi.toFixed(0)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-600">-</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-pink-300">{fmt(row.leads)}</td>
+                      <td className="py-2.5 px-3 text-right">
+                        {row.leads > 0 ? (
+                          <span
+                            className={`font-medium ${
+                              row.cpl <= 50
+                                ? "text-emerald-400"
+                                : row.cpl <= 100
+                                  ? "text-amber-400"
+                                  : "text-rose-400"
+                            }`}
+                          >
+                            ฿{row.cpl.toFixed(0)}
                           </span>
                         ) : (
                           <span className="text-gray-600">-</span>

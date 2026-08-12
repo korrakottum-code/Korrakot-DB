@@ -386,6 +386,8 @@ export interface CampaignRow {
   optimizationGoal?: string;
   inbox: number;
   cpi: number;
+  leads: number;
+  cpl: number;
 }
 
 interface CampaignInsightRaw {
@@ -519,6 +521,8 @@ export async function fetchAllCampaignMetadata(
         effectiveStatus: budget.effective_status || "",
         inbox: 0,
         cpi: 0,
+        leads: 0,
+        cpl: 0,
       }));
       return { campaigns, adSetGoals };
     })
@@ -589,6 +593,9 @@ export async function fetchAllCampaignData(
             (a) => a.action_type === "onsite_conversion.messaging_conversation_started_7d"
           )?.value || "0"
         );
+        const leads = parseInt(
+          row.actions?.find((a) => a.action_type === "lead")?.value || "0"
+        );
         const budgetInfo = budgetMap[row.campaign_id] || { budget: 0, budgetType: "-", budgetRemaining: null, objective: "", optimizationGoal: "", status: "", effectiveStatus: "" };
 
         return {
@@ -606,6 +613,8 @@ export async function fetchAllCampaignData(
           effectiveStatus: budgetInfo.effectiveStatus,
           inbox,
           cpi: inbox > 0 ? spend / inbox : 0,
+          leads,
+          cpl: leads > 0 ? spend / leads : 0,
         };
       });
     })

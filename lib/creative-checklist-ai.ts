@@ -62,7 +62,7 @@ const IMAGE_FETCH_TIMEOUT_MS = 30_000;
 const AI_FETCH_TIMEOUT_MS = 60_000;
 const AI_RETRY_DELAY_MS = 2_000;
 
-async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; mimeType: string }> {
+export async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; mimeType: string }> {
   let res: Response;
   try {
     res = await fetch(imageUrl, { signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS) });

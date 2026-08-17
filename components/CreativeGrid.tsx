@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import type { AdInsight } from "@/lib/meta";
-import { Play, Image as ImageIcon, X, ChevronDown, ChevronUp, Tag, Pencil, Check, Sparkles, Loader2 } from "lucide-react";
+import { Play, Image as ImageIcon, X, ChevronDown, ChevronUp, Tag, Pencil, Check } from "lucide-react";
 import { PROGRAM_MAP } from "@/lib/parser";
 import { hasReliableCost, MIN_BEST_ACTIONS } from "@/lib/metrics";
 
@@ -99,7 +99,6 @@ export default function CreativeGrid({
   const [editingPromoKey, setEditingPromoKey] = useState<string | null>(null);
   const [promoInput, setPromoInput] = useState("");
   const [savingPromo, setSavingPromo] = useState(false);
-  const [suggestingPromoKey, setSuggestingPromoKey] = useState<string | null>(null);
   const [renamingPromo, setRenamingPromo] = useState<string | null>(null);
   const [renamePromoInput, setRenamePromoInput] = useState("");
   const [bulkPromoLoading, setBulkPromoLoading] = useState(false);
@@ -346,31 +345,8 @@ export default function CreativeGrid({
   }, [viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ป้ายกลุ่มโปรโมชั่นต่อการ์ด — กดเพื่อติด/แก้แท็ก เพราะราคาไม่ได้อยู่ในชื่อแอด ต้องให้คนใส่เอง
-  // ให้ AI อ่านราคาจากรูปครีเอทีฟแทนพิมพ์เอง — ราคาไม่ได้อยู่ในชื่อแอด แต่มักเห็นชัดในภาพ
-  // ผู้ใช้แค่เปิดช่องติดแท็ก ระบบเดาให้ในช่อง แล้วกดยืนยัน (Check) ได้เลยถ้าถูกต้อง
-  const requestPromoSuggestion = async (row: CreativeRow) => {
-    const thumbnailUrl = creatives[row.groupKey]?.thumbnailUrl;
-    if (!thumbnailUrl) return; // รูปยังไม่โหลด — ไม่มีอะไรให้ AI ดู เดาไม่ได้
-    setSuggestingPromoKey(row.groupKey);
-    try {
-      const res = await fetch("/api/creative-promo-groups/suggest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl: thumbnailUrl }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      if (data.promoGroup) setPromoInput(data.promoGroup);
-    } catch {
-      // เงียบไว้ — พิมพ์เองได้เหมือนเดิมถ้า AI เดาไม่ได้/ไม่เจอราคาในภาพ
-    } finally {
-      setSuggestingPromoKey(null);
-    }
-  };
-
   const renderPromoTag = (row: CreativeRow) => {
     if (editingPromoKey === row.groupKey) {
-      const isSuggesting = suggestingPromoKey === row.groupKey;
       return (
         <div className="flex items-center gap-1 mt-0.5" onClick={(e) => e.stopPropagation()}>
           <input
@@ -381,24 +357,14 @@ export default function CreativeGrid({
               if (e.key === "Enter") savePromoGroup(row.groupKey, promoInput);
               if (e.key === "Escape") setEditingPromoKey(null);
             }}
-            placeholder={isSuggesting ? "AI กำลังเดา..." : "เช่น 2990"}
-            disabled={isSuggesting}
+            placeholder="เช่น 2990"
             autoFocus
-            className="w-16 bg-gray-900 border border-indigo-600 rounded px-1 py-0.5 text-[10px] text-white focus:outline-none disabled:opacity-60"
+            className="w-16 bg-gray-900 border border-indigo-600 rounded px-1 py-0.5 text-[10px] text-white focus:outline-none"
           />
           <button
-            onClick={() => requestPromoSuggestion(row)}
-            disabled={isSuggesting || !creatives[row.groupKey]?.thumbnailUrl}
-            className="text-purple-400 hover:text-purple-300 disabled:opacity-40 flex-shrink-0"
-            title="ให้ AI เดาราคาจากรูป"
-          >
-            {isSuggesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-          </button>
-          <button
             onClick={() => savePromoGroup(row.groupKey, promoInput)}
-            disabled={savingPromo || isSuggesting}
-            className="text-emerald-400 hover:text-emerald-300 disabled:opacity-40 flex-shrink-0"
-            title="ยืนยัน"
+            disabled={savingPromo}
+            className="text-emerald-400 hover:text-emerald-300 flex-shrink-0"
           >
             <Check className="w-3 h-3" />
           </button>
@@ -428,10 +394,9 @@ export default function CreativeGrid({
           e.stopPropagation();
           setEditingPromoKey(row.groupKey);
           setPromoInput("");
-          requestPromoSuggestion(row); // เปิดช่องแล้วให้ AI เดาทันที — เหลือแค่กดยืนยันถ้าถูก
         }}
         className="flex items-center gap-0.5 mt-0.5 text-[10px] text-gray-500 hover:text-indigo-300"
-        title="ติดแท็กกลุ่มโปรโมชั่น (AI จะเดาให้จากรูป)"
+        title="ติดแท็กกลุ่มโปรโมชั่น"
       >
         <Pencil className="w-2.5 h-2.5" />
         ตั้งกลุ่มโปร
@@ -554,9 +519,7 @@ export default function CreativeGrid({
 
       {viewMode === "promo" && (
         <p className="text-[11px] text-gray-500 mb-3">
-          ราคา/โปรโมชั่นไม่ได้อยู่ในชื่อแอด — กดไอคอนดินสอบนชิ้นที่ยังไม่ได้ตั้งกลุ่ม แล้ว AI จะเดาราคาจากรูปให้ในช่อง (
-          <Sparkles className="w-2.5 h-2.5 inline text-purple-400" /> กดเดาใหม่ได้ถ้าไม่ตรง) เหลือแค่กด{" "}
-          <Check className="w-2.5 h-2.5 inline text-emerald-400" /> ยืนยันถ้าถูกต้อง
+          ราคา/โปรโมชั่นไม่ได้อยู่ในชื่อแอด ต้องติดแท็กเองที่แต่ละชิ้น (เช่น &quot;2990&quot;, &quot;11990&quot;) — กดไอคอนป้ายบนชิ้นที่ยังไม่ได้ตั้งกลุ่มเพื่อติดแท็ก
         </p>
       )}
 

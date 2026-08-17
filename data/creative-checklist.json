@@ -1,8 +1,8 @@
 {
-  "version": "2026-08-10.v1",
-  "lastUpdated": "2026-08-10",
-  "passThreshold": 65,
-  "sourceNote": "เทียบ Top 39 ครีเอทีฟ (CPI ต่ำสุด) กับ Bottom 39 ครีเอทีฟ (CPI สูงสุด) ที่มีข้อมูลเชื่อถือได้ ในช่วง 2026-07-11 ถึง 2026-08-10 (Top: 32 ภาพนิ่ง, 7 วิดีโอ, ข้าม 1). คะแนนเฉลี่ย Top = 69.6%, Bottom = 63.6%. เกณฑ์ผ่านตั้งที่จุดที่แยกสองกลุ่มได้ดีที่สุด: ภาพนิ่ง 65%, วิดีโอ 50% (ไม่ใช่จุดที่ทำให้ Top ผ่านเยอะสุดแบบเดิม). ข้อที่ต้องดูวิดีโอจริง (requiresVideoPlayback) ไม่ถูกนับคะแนนอัตโนมัติ — แสดงให้ตรวจเองใน UI แทน. ⚠️ ข้อที่แยกแอดดี/แย่ไม่ได้ (Top ทำไม่ต่างจาก Bottom) ควรทบทวน: hook-pain (Top 33.3% vs Bottom 51.3%), cta-benefits (Top 12.8% vs Bottom 20.5%), brand-tone (Top 82.1% vs Bottom 87.2%), tech-ratio (Top 100% vs Bottom 100%), tech-notcut (Top 100% vs Bottom 100%), brand-contrast (Top 100% vs Bottom 97.4%), hook-price (Top 79.5% vs Bottom 74.4%), offer-clear (Top 79.5% vs Bottom 74.4%), hook-readable (Top 94.9% vs Bottom 89.7%), offer-match (Top 69.2% vs Bottom 61.5%). อัปเดตอัตโนมัติทุกสัปดาห์ผ่าน GitHub Actions (scripts/refresh-checklist.ts) — merge ผ่าน Pull Request หลังรีวิว.",
+  "version": "2026-08-17.v1",
+  "lastUpdated": "2026-08-17",
+  "passThreshold": 70,
+  "sourceNote": "เทียบ Top 39 ครีเอทีฟ (CPI ต่ำสุด) กับ Bottom 39 ครีเอทีฟ (CPI สูงสุด) ที่มีข้อมูลเชื่อถือได้ ในช่วง 2026-07-18 ถึง 2026-08-17 (Top: 30 ภาพนิ่ง, 9 วิดีโอ, ข้าม 1). คะแนนเฉลี่ย Top = 68.3%, Bottom = 60.9%. เกณฑ์ผ่านตั้งที่จุดที่แยกสองกลุ่มได้ดีที่สุด: ภาพนิ่ง 70%, วิดีโอ 50% (ไม่ใช่จุดที่ทำให้ Top ผ่านเยอะสุดแบบเดิม). ข้อที่ต้องดูวิดีโอจริง (requiresVideoPlayback) ไม่ถูกนับคะแนนอัตโนมัติ — แสดงให้ตรวจเองใน UI แทน. ⚠️ ข้อที่แยกแอดดี/แย่ไม่ได้ (Top ทำไม่ต่างจาก Bottom) ควรทบทวน: hook-pain (Top 38.5% vs Bottom 46.2%), brand-tone (Top 76.9% vs Bottom 82.1%), cta-benefits (Top 15.4% vs Bottom 15.4%), tech-ratio (Top 100% vs Bottom 100%), tech-notcut (Top 100% vs Bottom 100%), offer-anchor (Top 56.4% vs Bottom 51.3%), brand-contrast (Top 100% vs Bottom 94.9%), brand-logo (Top 89.7% vs Bottom 82.1%), proof-beforeafter (Top 35.9% vs Bottom 28.2%), offer-match (Top 69.2% vs Bottom 61.5%). อัปเดตอัตโนมัติทุกสัปดาห์ผ่าน GitHub Actions (scripts/refresh-checklist.ts) — merge ผ่าน Pull Request หลังรีวิว.",
   "categories": [
     {
       "id": "hook",
@@ -37,7 +37,7 @@
         {
           "id": "proof-product",
           "label": "มีสินค้า/ขวดยา/เครื่องมือจริงในภาพ เพื่อสร้างความเป็นรูปธรรม",
-          "weight": 1
+          "weight": 2
         },
         {
           "id": "proof-testimonial",
@@ -136,7 +136,7 @@
     }
   ],
   "passThresholdByMedia": {
-    "image": 65,
+    "image": 70,
     "video": 50
   }
 }

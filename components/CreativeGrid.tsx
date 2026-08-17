@@ -72,9 +72,22 @@ interface Props {
   branchFilter?: "all" | "class" | "classgo";
   branchName?: string;
   programFilter?: string;
+  /** groupKey ("PF02-0368") → กลุ่มโปรโมชั่นที่ทีมติดแท็กเอง — ยกสถานะไว้ที่ Dashboard
+   * เพื่อให้กรองได้ทั้งรายงาน ไม่ใช่แค่ในแท็บนี้ */
+  promoGroups: Record<string, string>;
+  promoWritable: boolean;
+  onPromoGroupsChange: (map: Record<string, string>) => void;
 }
 
-export default function CreativeGrid({ insights, branchFilter = "all", branchName = "all", programFilter = "all" }: Props) {
+export default function CreativeGrid({
+  insights,
+  branchFilter = "all",
+  branchName = "all",
+  programFilter = "all",
+  promoGroups,
+  promoWritable,
+  onPromoGroupsChange,
+}: Props) {
   const [creatives, setCreatives] = useState<Record<string, CreativeInfo>>({});
   const [loading, setLoading] = useState(false);
   const fetchedRef = useRef<Set<string>>(new Set());
@@ -83,23 +96,9 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
   const [expandedPrograms, setExpandedPrograms] = useState<Set<string>>(new Set());
   const [expandedPromos, setExpandedPromos] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<"program" | "promo" | "flat">("program");
-  const [promoGroups, setPromoGroups] = useState<Record<string, string>>({});
-  const [promoWritable, setPromoWritable] = useState(false);
   const [editingPromoKey, setEditingPromoKey] = useState<string | null>(null);
   const [promoInput, setPromoInput] = useState("");
   const [savingPromo, setSavingPromo] = useState(false);
-
-  // โหลดแท็กกลุ่มโปรโมชั่น (แยกจากหมวดบริการ เช่น ฟิลเลอร์ 2990 vs ฟิลเลอร์ 11990)
-  // ครั้งเดียวตอน mount — เก็บใน Postgres ทั้งทีมเห็นตรงกัน
-  useEffect(() => {
-    fetch("/api/creative-promo-groups")
-      .then((res) => res.json())
-      .then((data) => {
-        setPromoGroups(data.promoGroups || {});
-        setPromoWritable(data.writable === true);
-      })
-      .catch(() => {});
-  }, []);
 
   const savePromoGroup = async (groupKey: string, value: string) => {
     setSavingPromo(true);
@@ -111,7 +110,7 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      setPromoGroups(data.promoGroups || {});
+      onPromoGroupsChange(data.promoGroups || {});
       setEditingPromoKey(null);
     } catch {
       // เงียบไว้พอ — ปุ่มลองใหม่ได้ทันที ไม่ต้องมี error banner แยกสำหรับ tag เล็กๆ นี้

@@ -22,6 +22,10 @@ interface Props {
   excludedBranches: Set<string>;
   onExcludedBranches: (v: Set<string>) => void;
   allBranchNames: string[];
+  promoFilter: string;
+  onPromoFilter: (v: string) => void;
+  promoOptions: string[];
+  untaggedPromoValue: string;
 }
 
 
@@ -113,6 +117,36 @@ function BranchDropdown({ value, options, onChange }: { value: string; options: 
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * กรองตามกลุ่มโปรโมชั่นที่ทีมติดแท็กเองในหน้า Creative (ราคาไม่ได้อยู่ในชื่อแอด)
+ * ใช้ได้ทุกแท็บของรายงาน ไม่ผูกกับ tab ใดโดยเฉพาะเหมือน branch/program filter
+ */
+function PromoDropdown({
+  value,
+  options,
+  onChange,
+  untaggedValue,
+}: {
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+  untaggedValue: string;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none min-w-[130px]"
+    >
+      <option value="all">ทุกกลุ่มโปร</option>
+      {options.map((g) => (
+        <option key={g} value={g}>{g}</option>
+      ))}
+      <option value={untaggedValue}>ยังไม่ได้ตั้งกลุ่ม</option>
+    </select>
   );
 }
 
@@ -296,6 +330,10 @@ export default function FilterBar({
   excludedBranches,
   onExcludedBranches,
   allBranchNames,
+  promoFilter,
+  onPromoFilter,
+  promoOptions,
+  untaggedPromoValue,
 }: Props) {
   const showBranchGroup = tab === "branch" || tab === "program" || tab === "creative";
   const showProgramButtons = tab === "branch" || tab === "creative";
@@ -384,6 +422,15 @@ export default function FilterBar({
         allBranches={allBranchNames}
         excluded={excludedBranches}
         onChange={onExcludedBranches}
+      />
+
+      {/* กลุ่มโปรโมชั่น (แท็กเองที่หน้า Creative) — ใช้กรองได้ทุกแท็บของรายงาน */}
+      <span className="text-slate-700 mx-0.5">|</span>
+      <PromoDropdown
+        value={promoFilter}
+        options={promoOptions}
+        onChange={onPromoFilter}
+        untaggedValue={untaggedPromoValue}
       />
 
       <span className="text-slate-700 mx-0.5">|</span>

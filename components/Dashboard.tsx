@@ -46,6 +46,9 @@ const DATE_PRESETS = [
 
 const THAI_MONTHS_SHORT = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 
+/** ค่าพิเศษของ promoFilter สำหรับ "ชิ้นที่ยังไม่ได้ติดแท็กกลุ่มโปรโมชั่น" */
+const UNTAGGED_PROMO = "__untagged__";
+
 // "2026-08-01".."2026-08-06" → "1–6 ส.ค." / วันเดียว → "6 ส.ค." / ข้ามเดือน → "28 ก.ค. – 3 ส.ค."
 function fmtDateRange(since: string, until: string): string {
   const [, ms, ds] = since.split("-").map(Number);
@@ -166,6 +169,9 @@ export default function Dashboard() {
   const [dynamicBranchCodes, setDynamicBranchCodes] = useState<Set<string>>(new Set());
   const [testBranchNames, setTestBranchNames] = useState<Set<string>>(new Set());
   const [showTestBranches, setShowTestBranches] = useState(false);
+  const [promoGroups, setPromoGroups] = useState<Record<string, string>>({});
+  const [promoWritable, setPromoWritable] = useState(false);
+  const [promoFilter, setPromoFilter] = useState<string>("all");
 
   // Load dynamic branch codes (added via /settings) so unknown-branch detection stays in sync
   useEffect(() => {
@@ -183,6 +189,36 @@ export default function Dashboard() {
       })
       .catch(() => {});
   }, []);
+
+  // โหลดแท็กกลุ่มโปรโมชั่นที่ทีมติดไว้ (ที่หน้า Creative) — ยกมาไว้ระดับ Dashboard
+  // เพื่อให้กรองได้ทั้งรายงาน (สาขา/โปรแกรม/Creative) ไม่ใช่แค่ในแท็บ Creative
+  const loadPromoGroups = useCallback(() => {
+    fetch("/api/creative-promo-groups")
+      .then((res) => res.json())
+      .then((data) => {
+        setPromoGroups(data.promoGroups || {});
+        setPromoWritable(data.writable === true);
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    loadPromoGroups();
+  }, [loadPromoGroups]);
+
+  // ราคา/โปรโมชั่นไม่ได้อยู่ในชื่อแอด — คีย์เดียวกับที่ CreativeGrid ใช้ผูกแท็ก (awBase-creativeId)
+  const promoGroupFor = useCallback(
+    (ins: AdInsight): string => {
+      const cid = ins.parsed.creativeId;
+      if (!cid) return "";
+      const awBase = ins.parsed.awCode.replace(/-\d+$/, "");
+      return promoGroups[`${awBase}-${cid}`] || "";
+    },
+    [promoGroups]
+  );
+  const promoOptions = useMemo(
+    () => [...new Set(Object.values(promoGroups))].filter(Boolean).sort(),
+    [promoGroups]
+  );
 
   // Load initial filters from URL Search Params on mount
   useEffect(() => {
@@ -242,6 +278,7 @@ export default function Dashboard() {
     setProgramFilter("all");
     setAdCodeFilter("");
     setExcludedBranches(new Set());
+    setPromoFilter("all");
   };
 
   const staleReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -375,6 +412,11 @@ export default function Dashboard() {
     // Exclude user-hidden branches
     if (excludedBranches.size > 0 && excludedBranches.has(b)) return false;
     if (!showTestBranches && testBranchNames.has(b)) return false;
+    // กลุ่มโปรโมชั่นเป็นมิติแยกจาก tab ที่กำลังดู เลยไม่ผูกกับ tab ใดโดยเฉพาะ (ใช้ได้ทุกแท็บ)
+    if (promoFilter !== "all") {
+      const pg = promoGroupFor(i);
+      if (promoFilter === UNTAGGED_PROMO ? pg !== "" : pg !== promoFilter) return false;
+    }
     if (tab === "branch") {
       if (branchFilter === "classgo" && !b.startsWith("Class Go")) return false;
       if (branchFilter === "class" && b.startsWith("Class Go")) return false;
@@ -400,6 +442,11 @@ export default function Dashboard() {
     // Exclude user-hidden branches
     if (excludedBranches.size > 0 && excludedBranches.has(b)) return false;
     if (!showTestBranches && testBranchNames.has(b)) return false;
+    // กลุ่มโปรโมชั่นเป็นมิติแยกจาก tab ที่กำลังดู เลยไม่ผูกกับ tab ใดโดยเฉพาะ (ใช้ได้ทุกแท็บ)
+    if (promoFilter !== "all") {
+      const pg = promoGroupFor(i);
+      if (promoFilter === UNTAGGED_PROMO ? pg !== "" : pg !== promoFilter) return false;
+    }
     if (tab === "branch") {
       if (branchFilter === "classgo" && !b.startsWith("Class Go")) return false;
       if (branchFilter === "class" && b.startsWith("Class Go")) return false;
@@ -880,6 +927,10 @@ export default function Dashboard() {
               excludedBranches={excludedBranches}
               onExcludedBranches={setExcludedBranches}
               allBranchNames={branchOptionsAll}
+              promoFilter={promoFilter}
+              onPromoFilter={setPromoFilter}
+              promoOptions={promoOptions}
+              untaggedPromoValue={UNTAGGED_PROMO}
             />
             {testBranchNames.size > 0 && (
               <button
@@ -897,7 +948,12 @@ export default function Dashboard() {
               กำลังดึงข้อมูลจาก Meta API...
             </div>
           ) : tab === "creative" ? (
-            <CreativeGrid insights={filteredInsights} />
+            <CreativeGrid
+              insights={filteredInsights}
+              promoGroups={promoGroups}
+              promoWritable={promoWritable}
+              onPromoGroupsChange={setPromoGroups}
+            />
           ) : chartData.length === 0 ? (
             <div className="flex items-center justify-center h-64 text-gray-500">
               ไม่มีข้อมูล

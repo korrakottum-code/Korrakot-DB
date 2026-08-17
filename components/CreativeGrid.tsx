@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import type { AdInsight } from "@/lib/meta";
-import { Play, Image as ImageIcon, X, ChevronDown, ChevronUp } from "lucide-react";
+import { Play, Image as ImageIcon, X, ChevronDown, ChevronUp, Tag, Pencil, Check } from "lucide-react";
 import { PROGRAM_MAP } from "@/lib/parser";
 import { hasReliableCost, MIN_BEST_ACTIONS } from "@/lib/metrics";
 
@@ -41,7 +41,11 @@ interface CreativeRow {
   cpl: number;
   branchCount: number;
   adCount: number;
+  /** กลุ่มโปรโมชั่นที่ทีมติดแท็กเอง เช่น "2990" — ราคาไม่ได้อยู่ในชื่อแอด จึงแยกอัตโนมัติไม่ได้ */
+  promoGroup: string;
 }
+
+const NO_PROMO_GROUP = "ยังไม่ได้ตั้งกลุ่ม";
 
 function proxyUrl(url: string) {
   if (!url) return "";
@@ -68,16 +72,101 @@ interface Props {
   branchFilter?: "all" | "class" | "classgo";
   branchName?: string;
   programFilter?: string;
+  /** groupKey ("PF02-0368") → กลุ่มโปรโมชั่นที่ทีมติดแท็กเอง — ยกสถานะไว้ที่ Dashboard
+   * เพื่อให้กรองได้ทั้งรายงาน ไม่ใช่แค่ในแท็บนี้ */
+  promoGroups: Record<string, string>;
+  promoWritable: boolean;
+  onPromoGroupsChange: (map: Record<string, string>) => void;
 }
 
-export default function CreativeGrid({ insights, branchFilter = "all", branchName = "all", programFilter = "all" }: Props) {
+export default function CreativeGrid({
+  insights,
+  branchFilter = "all",
+  branchName = "all",
+  programFilter = "all",
+  promoGroups,
+  promoWritable,
+  onPromoGroupsChange,
+}: Props) {
   const [creatives, setCreatives] = useState<Record<string, CreativeInfo>>({});
   const [loading, setLoading] = useState(false);
   const fetchedRef = useRef<Set<string>>(new Set());
   const [modal, setModal] = useState<ModalData | null>(null);
   const [sortBy, setSortBy] = useState<SortKey>("spend");
   const [expandedPrograms, setExpandedPrograms] = useState<Set<string>>(new Set());
-  const [flatView, setFlatView] = useState(false);
+  const [expandedPromos, setExpandedPromos] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<"program" | "promo" | "flat">("program");
+  const [editingPromoKey, setEditingPromoKey] = useState<string | null>(null);
+  const [promoInput, setPromoInput] = useState("");
+  const [savingPromo, setSavingPromo] = useState(false);
+  const [renamingPromo, setRenamingPromo] = useState<string | null>(null);
+  const [renamePromoInput, setRenamePromoInput] = useState("");
+  const [bulkPromoLoading, setBulkPromoLoading] = useState(false);
+
+  // แก้ชื่อกลุ่มโปรโมชั่นที่พิมพ์ผิด/ไม่ตรง — ย้ายทุกชิ้นที่แท็กด้วยชื่อเดิมไปชื่อใหม่ทีเดียว
+  const renamePromoGroupBulk = async (from: string, to: string) => {
+    const trimmed = to.trim();
+    if (!trimmed || trimmed === from) {
+      setRenamingPromo(null);
+      return;
+    }
+    setBulkPromoLoading(true);
+    try {
+      const res = await fetch("/api/creative-promo-groups", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from, to: trimmed }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      onPromoGroupsChange(data.promoGroups || {});
+      setRenamingPromo(null);
+    } catch {
+      // เงียบไว้ — ลองใหม่ได้จากช่องเดิม
+    } finally {
+      setBulkPromoLoading(false);
+    }
+  };
+
+  // เลิกใช้กลุ่มโปรโมชั่นทั้งกลุ่ม — ล้างแท็กออกจากทุกชิ้นที่ใช้ชื่อนี้ในคำสั่งเดียว
+  const deletePromoGroupBulk = async (name: string) => {
+    if (!confirm(`เลิกใช้กลุ่ม "${name}" ทั้งหมด? ทุกชิ้นที่แท็กไว้จะกลับไปเป็น "ยังไม่ได้ตั้งกลุ่ม"`)) return;
+    setBulkPromoLoading(true);
+    try {
+      const res = await fetch(`/api/creative-promo-groups?promoGroup=${encodeURIComponent(name)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      onPromoGroupsChange(data.promoGroups || {});
+    } catch {
+      // เงียบไว้ — ปุ่มลองใหม่ได้ทันที
+    } finally {
+      setBulkPromoLoading(false);
+    }
+  };
+
+  const savePromoGroup = async (groupKey: string, value: string) => {
+    setSavingPromo(true);
+    try {
+      const res = await fetch("/api/creative-promo-groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupKey, promoGroup: value.trim() }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      onPromoGroupsChange(data.promoGroups || {});
+      setEditingPromoKey(null);
+    } catch {
+      // เงียบไว้พอ — ปุ่มลองใหม่ได้ทันที ไม่ต้องมี error banner แยกสำหรับ tag เล็กๆ นี้
+    } finally {
+      setSavingPromo(false);
+    }
+  };
+
+  const distinctPromoGroups = useMemo(
+    () => [...new Set(Object.values(promoGroups))].filter(Boolean).sort(),
+    [promoGroups]
+  );
 
   // Apply branch filter on insights
   const filteredInsights = insights.filter((i) => {
@@ -105,6 +194,7 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
         sub: ins.parsed.sub || "",
         spend: 0, inbox: 0, cpi: 0, leads: 0, cpl: 0,
         branchCount: 0, adCount: 0,
+        promoGroup: promoGroups[groupKey] || "",
         branches: new Set(),
       };
     }
@@ -162,6 +252,29 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
     return spendB - spendA;
   });
 
+  // Group rows by promo tag — แยกภายในหมวดบริการเดียวกัน (เช่น ฟิลเลอร์ 2990 vs ฟิลเลอร์ 11990)
+  // ชิ้นที่ยังไม่ได้ติดแท็กจะรวมอยู่ใน NO_PROMO_GROUP ให้เห็นว่ายังไม่ได้จัดกลุ่มเท่าไหร่
+  const promoGroupBuckets: Record<string, CreativeRow[]> = {};
+  for (const row of visibleRows) {
+    const p = row.promoGroup || NO_PROMO_GROUP;
+    if (!promoGroupBuckets[p]) promoGroupBuckets[p] = [];
+    promoGroupBuckets[p].push(row);
+  }
+  const promoList = Object.entries(promoGroupBuckets).sort((a, b) => {
+    if (a[0] === NO_PROMO_GROUP) return 1;
+    if (b[0] === NO_PROMO_GROUP) return -1;
+    const spendA = a[1].reduce((s, r) => s + r.spend, 0);
+    const spendB = b[1].reduce((s, r) => s + r.spend, 0);
+    return spendB - spendA;
+  });
+
+  const togglePromo = (p: string) => {
+    setExpandedPromos((prev) => {
+      const next = new Set(prev);
+      if (next.has(p)) next.delete(p); else next.add(p);
+      return next;
+    });
+  };
 
   const toggleProgram = (p: string) => {
     setExpandedPrograms((prev) => {
@@ -219,13 +332,83 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
     }
   }, [expandedPrograms]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    for (const promo of expandedPromos) {
+      const promoRows = promoGroupBuckets[promo];
+      if (promoRows) fetchThumbnails(promoRows);
+    }
+  }, [expandedPromos]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Flat view — fetch thumbnails for every visible creative, not just heroes
   useEffect(() => {
-    if (flatView) fetchThumbnails(visibleRows);
-  }, [flatView]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (viewMode === "flat") fetchThumbnails(visibleRows);
+  }, [viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ป้ายกลุ่มโปรโมชั่นต่อการ์ด — กดเพื่อติด/แก้แท็ก เพราะราคาไม่ได้อยู่ในชื่อแอด ต้องให้คนใส่เอง
+  const renderPromoTag = (row: CreativeRow) => {
+    if (editingPromoKey === row.groupKey) {
+      return (
+        <div className="flex items-center gap-1 mt-0.5" onClick={(e) => e.stopPropagation()}>
+          <input
+            list="promo-group-options"
+            value={promoInput}
+            onChange={(e) => setPromoInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") savePromoGroup(row.groupKey, promoInput);
+              if (e.key === "Escape") setEditingPromoKey(null);
+            }}
+            placeholder="เช่น 2990"
+            autoFocus
+            className="w-16 bg-gray-900 border border-indigo-600 rounded px-1 py-0.5 text-[10px] text-white focus:outline-none"
+          />
+          <button
+            onClick={() => savePromoGroup(row.groupKey, promoInput)}
+            disabled={savingPromo}
+            className="text-emerald-400 hover:text-emerald-300 flex-shrink-0"
+          >
+            <Check className="w-3 h-3" />
+          </button>
+        </div>
+      );
+    }
+    if (!promoWritable) return null;
+    if (row.promoGroup) {
+      return (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setEditingPromoKey(row.groupKey);
+            setPromoInput(row.promoGroup);
+          }}
+          className="flex items-center gap-0.5 mt-0.5 text-[10px] bg-indigo-950/60 text-indigo-300 px-1.5 py-0.5 rounded-full hover:bg-indigo-900/60"
+          title="แก้ไขกลุ่มโปรโมชั่น"
+        >
+          <Tag className="w-2.5 h-2.5" />
+          {row.promoGroup}
+        </button>
+      );
+    }
+    return (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setEditingPromoKey(row.groupKey);
+          setPromoInput("");
+        }}
+        className="flex items-center gap-0.5 mt-0.5 text-[10px] text-gray-500 hover:text-indigo-300"
+        title="ติดแท็กกลุ่มโปรโมชั่น"
+      >
+        <Pencil className="w-2.5 h-2.5" />
+        ตั้งกลุ่มโปร
+      </button>
+    );
+  };
 
   return (
     <div>
+      <datalist id="promo-group-options">
+        {distinctPromoGroups.map((g) => <option key={g} value={g} />)}
+      </datalist>
       {/* Modal */}
       {modal && (
         <div
@@ -304,29 +487,44 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
         <span className="text-[10px] text-gray-500 whitespace-nowrap">CPI/CPL ใช้เฉพาะรายการที่มีผลลัพธ์ ≥ {MIN_BEST_ACTIONS}</span>
       </div>
 
-      {/* View mode toggle — grouped by program (default) vs flat all-creatives */}
+      {/* View mode toggle — grouped by program (default), grouped by promo tag, or flat all-creatives */}
       <div className="flex items-center gap-2 mb-4 text-[11px] sm:text-xs">
         <button
-          onClick={() => setFlatView(false)}
+          onClick={() => setViewMode("program")}
           className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
-            !flatView ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800"
+            viewMode === "program" ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800"
           }`}
         >
           จัดกลุ่มตามโปรแกรม
         </button>
         <button
-          onClick={() => setFlatView(true)}
+          onClick={() => setViewMode("promo")}
+          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-medium transition-colors ${
+            viewMode === "promo" ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800"
+          }`}
+        >
+          <Tag className="w-3 h-3" />
+          จัดกลุ่มตามโปรโมชั่น
+        </button>
+        <button
+          onClick={() => setViewMode("flat")}
           className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
-            flatView ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800"
+            viewMode === "flat" ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800"
           }`}
         >
           ดูทั้งหมด (ไม่แบ่งกลุ่ม)
         </button>
-        {flatView && <span className="text-[10px] text-gray-500">{visibleRows.length} ชิ้น</span>}
+        {viewMode === "flat" && <span className="text-[10px] text-gray-500">{visibleRows.length} ชิ้น</span>}
       </div>
 
+      {viewMode === "promo" && (
+        <p className="text-[11px] text-gray-500 mb-3">
+          ราคา/โปรโมชั่นไม่ได้อยู่ในชื่อแอด ต้องติดแท็กเองที่แต่ละชิ้น (เช่น &quot;2990&quot;, &quot;11990&quot;) — กดไอคอนป้ายบนชิ้นที่ยังไม่ได้ตั้งกลุ่มเพื่อติดแท็ก
+        </p>
+      )}
+
       {/* Flat view — every creative in one grid, no program grouping */}
-      {flatView && (
+      {viewMode === "flat" && (
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2">
           {visibleRows.map((row) => {
             const creative = creatives[row.groupKey];
@@ -379,6 +577,7 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
                     {row.program}{row.sub && row.sub !== "รวม" ? ` ${row.sub}` : ""}
                     {row.branchCount > 1 ? ` (${row.branchCount} สาขา)` : ""}
                   </p>
+                  {renderPromoTag(row)}
                   <div className="grid grid-cols-2 gap-x-1 pt-0.5 border-t border-gray-700">
                     <div><p className="text-[9px] text-gray-500">Spend</p><p className="text-[10px] font-medium text-emerald-400">{fmtB(row.spend)}</p></div>
                     <div><p className="text-[9px] text-gray-500">Inbox</p><p className="text-[10px] font-medium text-purple-400">{fmt(row.inbox)}</p></div>
@@ -393,7 +592,7 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
       )}
 
       {/* Hero section — one program group per row */}
-      {!flatView && (
+      {viewMode === "program" && (
       <div className="space-y-4">
         {programList.map(([program, progRows]) => {
           const top3 = progRows.slice(0, 3);
@@ -527,9 +726,153 @@ export default function CreativeGrid({ insights, branchFilter = "all", branchNam
                           <div className="p-2 space-y-0.5">
                             <p className="text-xs font-mono text-indigo-300 truncate">{row.awCodeBase}-{row.creativeId}</p>
                             <p className="text-xs text-gray-400 truncate">{row.sub && row.sub !== "รวม" ? row.sub : ""}{row.branchCount > 1 ? ` (${row.branchCount} สาขา)` : ""}</p>
+                            {renderPromoTag(row)}
                             {(!hasReliableMetric(row, "cpi") || !hasReliableMetric(row, "cpl")) && (
                               <p className="text-[10px] text-slate-500">ข้อมูลน้อยสำหรับการตัดสินผล</p>
                             )}
+                            <div className="grid grid-cols-2 gap-x-1.5 pt-1 border-t border-gray-700">
+                              <div><p className="text-xs text-gray-500">Spend</p><p className="text-xs font-medium text-emerald-400">{fmtB(row.spend)}</p></div>
+                              <div><p className="text-xs text-gray-500">Inbox</p><p className="text-xs font-medium text-purple-400">{fmt(row.inbox)}</p></div>
+                              <div><p className="text-xs text-gray-500">CPI</p><p className="text-xs font-medium text-yellow-400">{hasReliableMetric(row, "cpi") ? fmtB(row.cpi) : "ข้อมูลน้อย"}</p></div>
+                              <div><p className="text-xs text-gray-500">CPL</p><p className="text-xs font-medium text-pink-400">{hasReliableMetric(row, "cpl") ? fmtB(row.cpl) : "ข้อมูลน้อย"}</p></div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      )}
+
+      {/* Promo view — grouped by team-tagged promo group instead of service category */}
+      {viewMode === "promo" && (
+      <div className="space-y-4">
+        {promoList.map(([promo, promoRows]) => {
+          const isExpanded = expandedPromos.has(promo);
+          const totalSpend = promoRows.reduce((s, r) => s + r.spend, 0);
+          const totalInbox = promoRows.reduce((s, r) => s + r.inbox, 0);
+          const totalLeads = promoRows.reduce((s, r) => s + r.leads, 0);
+          const totalCPI = totalInbox > 0 ? totalSpend / totalInbox : 0;
+          const totalCPL = totalLeads > 0 ? totalSpend / totalLeads : 0;
+          const untagged = promo === NO_PROMO_GROUP;
+
+          return (
+            <div key={promo} className={`bg-gray-900 border rounded-2xl overflow-hidden ${untagged ? "border-gray-800/60 opacity-70" : "border-gray-800"}`}>
+              <div
+                className="flex items-center justify-between gap-3 p-3 cursor-pointer hover:bg-gray-800/30 transition-colors"
+                onClick={() => togglePromo(promo)}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Tag className={`w-4 h-4 flex-shrink-0 ${untagged ? "text-gray-600" : "text-indigo-400"}`} />
+                  {renamingPromo === promo ? (
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        value={renamePromoInput}
+                        onChange={(e) => setRenamePromoInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") renamePromoGroupBulk(promo, renamePromoInput);
+                          if (e.key === "Escape") setRenamingPromo(null);
+                        }}
+                        autoFocus
+                        className="w-24 bg-gray-900 border border-indigo-600 rounded px-1.5 py-0.5 text-sm text-white focus:outline-none"
+                      />
+                      <button
+                        onClick={() => renamePromoGroupBulk(promo, renamePromoInput)}
+                        disabled={bulkPromoLoading}
+                        className="text-emerald-400 hover:text-emerald-300"
+                        title="บันทึกชื่อใหม่"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-white font-bold text-sm truncate">{promo}</span>
+                  )}
+                  <span className="text-[11px] bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full flex-shrink-0">{promoRows.length}</span>
+                  {!untagged && promoWritable && renamingPromo !== promo && (
+                    <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => {
+                          setRenamingPromo(promo);
+                          setRenamePromoInput(promo);
+                        }}
+                        disabled={bulkPromoLoading}
+                        className="text-gray-500 hover:text-indigo-300"
+                        title="แก้ชื่อกลุ่มนี้ทั้งหมด"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => deletePromoGroupBulk(promo)}
+                        disabled={bulkPromoLoading}
+                        className="text-gray-500 hover:text-red-400"
+                        title="เลิกใช้กลุ่มนี้ทั้งหมด"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs flex-shrink-0">
+                  <span className="text-gray-500">Spend <span className="text-emerald-400 font-semibold">{fmtB(totalSpend)}</span></span>
+                  <span className="text-gray-500">Inbox <span className="text-purple-400 font-semibold">{fmt(totalInbox)}</span></span>
+                  <span className="text-gray-500">CPI <span className="text-amber-300 font-semibold">{totalInbox > 0 ? fmtB(totalCPI) : "-"}</span></span>
+                  <span className="text-gray-500">CPL <span className="text-pink-400 font-semibold">{totalLeads > 0 ? fmtB(totalCPL) : "-"}</span></span>
+                </div>
+                <div className="hidden sm:flex items-center flex-shrink-0">
+                  {isExpanded ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
+                </div>
+              </div>
+
+              {isExpanded && (
+                <div className="border-t border-gray-800 p-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                    {promoRows.map((row) => {
+                      const creative = creatives[row.groupKey];
+                      const isVideo = !!(creative?.videoId) || creative?.objectType === "VIDEO";
+                      return (
+                        <div
+                          key={row.groupKey}
+                          className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden hover:border-indigo-500 transition-colors cursor-pointer"
+                          onClick={() => creative?.thumbnailUrl && setModal({
+                            thumbnailUrl: creative.thumbnailUrl, isVideo,
+                            groupKey: row.groupKey, program: row.program, sub: row.sub,
+                            spend: row.spend, inbox: row.inbox, cpi: row.cpi,
+                            leads: row.leads, cpl: row.cpl, branchCount: row.branchCount,
+                          })}
+                        >
+                          <div className="relative w-full bg-gray-900 overflow-hidden" style={{aspectRatio: "1 / 1"}}>
+                            {creative?.thumbnailUrl ? (
+                              <>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={proxyUrl(creative.thumbnailUrl)} alt={row.awCodeBase} className="w-full h-full object-cover" />
+                                {isVideo && (
+                                  <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="bg-black/60 rounded-full p-2"><Play className="w-5 h-5 text-white fill-white" /></div>
+                                  </div>
+                                )}
+                              </>
+                            ) : loading ? (
+                              <div className="w-full h-full bg-slate-800/80 animate-pulse flex items-center justify-center">
+                                <div className="w-10 h-10 rounded bg-slate-700/40" />
+                              </div>
+                            ) : (
+                              <div className="w-full h-full flex flex-col items-center justify-center text-gray-600">
+                                <ImageIcon className="w-7 h-7 mb-1" /><span className="text-xs">โหลดไม่ได้</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="p-2 space-y-0.5">
+                            <p className="text-xs font-mono text-indigo-300 truncate">{row.awCodeBase}-{row.creativeId}</p>
+                            <p className="text-xs text-gray-400 truncate">
+                              {row.program}{row.sub && row.sub !== "รวม" ? ` ${row.sub}` : ""}
+                            </p>
+                            {renderPromoTag(row)}
                             <div className="grid grid-cols-2 gap-x-1.5 pt-1 border-t border-gray-700">
                               <div><p className="text-xs text-gray-500">Spend</p><p className="text-xs font-medium text-emerald-400">{fmtB(row.spend)}</p></div>
                               <div><p className="text-xs text-gray-500">Inbox</p><p className="text-xs font-medium text-purple-400">{fmt(row.inbox)}</p></div>

@@ -99,6 +99,50 @@ export default function CreativeGrid({
   const [editingPromoKey, setEditingPromoKey] = useState<string | null>(null);
   const [promoInput, setPromoInput] = useState("");
   const [savingPromo, setSavingPromo] = useState(false);
+  const [renamingPromo, setRenamingPromo] = useState<string | null>(null);
+  const [renamePromoInput, setRenamePromoInput] = useState("");
+  const [bulkPromoLoading, setBulkPromoLoading] = useState(false);
+
+  // แก้ชื่อกลุ่มโปรโมชั่นที่พิมพ์ผิด/ไม่ตรง — ย้ายทุกชิ้นที่แท็กด้วยชื่อเดิมไปชื่อใหม่ทีเดียว
+  const renamePromoGroupBulk = async (from: string, to: string) => {
+    const trimmed = to.trim();
+    if (!trimmed || trimmed === from) {
+      setRenamingPromo(null);
+      return;
+    }
+    setBulkPromoLoading(true);
+    try {
+      const res = await fetch("/api/creative-promo-groups", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from, to: trimmed }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      onPromoGroupsChange(data.promoGroups || {});
+      setRenamingPromo(null);
+    } catch {
+      // เงียบไว้ — ลองใหม่ได้จากช่องเดิม
+    } finally {
+      setBulkPromoLoading(false);
+    }
+  };
+
+  // เลิกใช้กลุ่มโปรโมชั่นทั้งกลุ่ม — ล้างแท็กออกจากทุกชิ้นที่ใช้ชื่อนี้ในคำสั่งเดียว
+  const deletePromoGroupBulk = async (name: string) => {
+    if (!confirm(`เลิกใช้กลุ่ม "${name}" ทั้งหมด? ทุกชิ้นที่แท็กไว้จะกลับไปเป็น "ยังไม่ได้ตั้งกลุ่ม"`)) return;
+    setBulkPromoLoading(true);
+    try {
+      const res = await fetch(`/api/creative-promo-groups?promoGroup=${encodeURIComponent(name)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      onPromoGroupsChange(data.promoGroups || {});
+    } catch {
+      // เงียบไว้ — ปุ่มลองใหม่ได้ทันที
+    } finally {
+      setBulkPromoLoading(false);
+    }
+  };
 
   const savePromoGroup = async (groupKey: string, value: string) => {
     setSavingPromo(true);
@@ -725,8 +769,54 @@ export default function CreativeGrid({
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <Tag className={`w-4 h-4 flex-shrink-0 ${untagged ? "text-gray-600" : "text-indigo-400"}`} />
-                  <span className="text-white font-bold text-sm truncate">{promo}</span>
+                  {renamingPromo === promo ? (
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        value={renamePromoInput}
+                        onChange={(e) => setRenamePromoInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") renamePromoGroupBulk(promo, renamePromoInput);
+                          if (e.key === "Escape") setRenamingPromo(null);
+                        }}
+                        autoFocus
+                        className="w-24 bg-gray-900 border border-indigo-600 rounded px-1.5 py-0.5 text-sm text-white focus:outline-none"
+                      />
+                      <button
+                        onClick={() => renamePromoGroupBulk(promo, renamePromoInput)}
+                        disabled={bulkPromoLoading}
+                        className="text-emerald-400 hover:text-emerald-300"
+                        title="บันทึกชื่อใหม่"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-white font-bold text-sm truncate">{promo}</span>
+                  )}
                   <span className="text-[11px] bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full flex-shrink-0">{promoRows.length}</span>
+                  {!untagged && promoWritable && renamingPromo !== promo && (
+                    <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => {
+                          setRenamingPromo(promo);
+                          setRenamePromoInput(promo);
+                        }}
+                        disabled={bulkPromoLoading}
+                        className="text-gray-500 hover:text-indigo-300"
+                        title="แก้ชื่อกลุ่มนี้ทั้งหมด"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => deletePromoGroupBulk(promo)}
+                        disabled={bulkPromoLoading}
+                        className="text-gray-500 hover:text-red-400"
+                        title="เลิกใช้กลุ่มนี้ทั้งหมด"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs flex-shrink-0">
                   <span className="text-gray-500">Spend <span className="text-emerald-400 font-semibold">{fmtB(totalSpend)}</span></span>

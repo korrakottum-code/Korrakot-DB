@@ -7,6 +7,8 @@ import {
   readPromoGroups,
   upsertPromoGroup,
   deletePromoGroup,
+  renamePromoGroup,
+  deletePromoGroupEverywhere,
 } from "@/lib/creative-promo-store";
 
 export const runtime = "nodejs";
@@ -31,8 +33,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/creative-promo-groups — { groupKey, promoGroup } upsert; promoGroup ว่าง = ลบแท็ก
-export async function POST(req: NextRequest) {
+function mutationDenied(req: NextRequest): NextResponse | null {
   const denied = requireInternalApiAuth(req);
   if (denied) return denied;
   if (!isSameOriginRequest(req.url, req.headers.get("origin"), req.headers.get("host"))) {
@@ -48,6 +49,14 @@ export async function POST(req: NextRequest) {
       { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } }
     );
   }
+  return null;
+}
+
+// POST /api/creative-promo-groups — { groupKey, promoGroup } upsert แท็กของ "ชิ้นเดียว"
+// promoGroup ว่าง = ลบแท็กของชิ้นนั้น
+export async function POST(req: NextRequest) {
+  const denied = mutationDenied(req);
+  if (denied) return denied;
 
   let body: { groupKey?: string; promoGroup?: string };
   try {
@@ -74,6 +83,63 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "บันทึกไม่สำเร็จ" },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH /api/creative-promo-groups — { from, to } เปลี่ยนชื่อกลุ่มโปรโมชั่นทั้งกลุ่มทีเดียว
+// (แก้ชื่อที่พิมพ์ผิด — ย้ายทุกชิ้นที่แท็กด้วยชื่อเดิมไปชื่อใหม่ในคำสั่งเดียว)
+export async function PATCH(req: NextRequest) {
+  const denied = mutationDenied(req);
+  if (denied) return denied;
+
+  let body: { from?: string; to?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "รูปแบบคำขอไม่ถูกต้อง" }, { status: 400 });
+  }
+  const from = String(body.from || "").trim();
+  const to = String(body.to || "").trim();
+  if (!from || !to) {
+    return NextResponse.json({ error: "กรุณาระบุชื่อเดิมและชื่อใหม่" }, { status: 400 });
+  }
+  if (to.length > 60) {
+    return NextResponse.json({ error: "ชื่อใหม่ยาวเกินไป" }, { status: 400 });
+  }
+  if (from === to) {
+    return NextResponse.json({ promoGroups: await readPromoGroups(), writable: true });
+  }
+
+  try {
+    await renamePromoGroup(from, to);
+    return NextResponse.json({ promoGroups: await readPromoGroups(), writable: true });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "เปลี่ยนชื่อไม่สำเร็จ" },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/creative-promo-groups?promoGroup=xxx — เลิกใช้กลุ่มนี้ทั้งกลุ่ม
+// (ล้างแท็กออกจากทุกชิ้นที่ใช้ชื่อนี้ในคำสั่งเดียว ต่างจากการล้างทีละชิ้นผ่าน POST)
+export async function DELETE(req: NextRequest) {
+  const denied = mutationDenied(req);
+  if (denied) return denied;
+
+  const promoGroup = String(req.nextUrl.searchParams.get("promoGroup") || "").trim();
+  if (!promoGroup) {
+    return NextResponse.json({ error: "กรุณาระบุ promoGroup" }, { status: 400 });
+  }
+
+  try {
+    await deletePromoGroupEverywhere(promoGroup);
+    return NextResponse.json({ promoGroups: await readPromoGroups(), writable: true });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "ลบไม่สำเร็จ" },
       { status: 500 }
     );
   }

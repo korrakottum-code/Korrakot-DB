@@ -48,3 +48,27 @@ export async function deletePromoGroup(groupKey: string): Promise<void> {
   await ensureSchema();
   await getSharedPool().query(`DELETE FROM creative_promo_group WHERE group_key = $1`, [groupKey]);
 }
+
+/**
+ * เปลี่ยนชื่อกลุ่มโปรโมชั่นทั้งกลุ่มในครั้งเดียว (แก้ชื่อที่พิมพ์ผิด/ไม่ตรง) — ย้ายทุกชิ้นที่แท็ก
+ * ด้วยชื่อเดิมไปเป็นชื่อใหม่ ถ้าชื่อใหม่มีอยู่แล้วจะรวมเป็นกลุ่มเดียวกัน (ไม่ error เพราะ
+ * primary key เป็น group_key ไม่ใช่ promo_group). คืนจำนวนชิ้นที่ถูกเปลี่ยน
+ */
+export async function renamePromoGroup(from: string, to: string): Promise<number> {
+  await ensureSchema();
+  const { rowCount } = await getSharedPool().query(
+    `UPDATE creative_promo_group SET promo_group = $2, updated_at = now() WHERE promo_group = $1`,
+    [from, to]
+  );
+  return rowCount ?? 0;
+}
+
+/** ลบแท็กกลุ่มโปรโมชั่นออกจากทุกชิ้นที่ใช้ชื่อนี้ในครั้งเดียว (โปรเลิกใช้แล้ว) คืนจำนวนชิ้นที่ถูกล้างแท็ก */
+export async function deletePromoGroupEverywhere(name: string): Promise<number> {
+  await ensureSchema();
+  const { rowCount } = await getSharedPool().query(
+    `DELETE FROM creative_promo_group WHERE promo_group = $1`,
+    [name]
+  );
+  return rowCount ?? 0;
+}

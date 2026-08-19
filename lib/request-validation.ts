@@ -19,7 +19,7 @@ export interface ValidatedDateQuery {
 
 export type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
-function parseIsoDate(value: string): Date | null {
+export function parseIsoDate(value: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const [year, month, day] = value.split("-").map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
@@ -65,6 +65,28 @@ export function validateDateQuery(searchParams: URLSearchParams): ValidationResu
     ok: true,
     value: { datePreset, since, until, forceRefresh: refresh === "1" },
   };
+}
+
+/** since/until บังคับคู่กันเสมอ ไม่มี preset — ใช้กับ API ภายนอกที่ผู้เรียกระบุวันที่เอง (เช่น Qlass) */
+export function validateExternalDateRangeQuery(searchParams: URLSearchParams): ValidationResult<{ since: string; until: string }> {
+  const since = searchParams.get("since");
+  const until = searchParams.get("until");
+  if (!since || !until) {
+    return { ok: false, error: "ต้องระบุ since และ until" };
+  }
+  const sinceDate = parseIsoDate(since);
+  const untilDate = parseIsoDate(until);
+  if (!sinceDate || !untilDate) {
+    return { ok: false, error: "วันที่ต้องอยู่ในรูปแบบ YYYY-MM-DD" };
+  }
+  if (sinceDate > untilDate) {
+    return { ok: false, error: "since ต้องไม่เกิน until" };
+  }
+  const rangeDays = Math.floor((untilDate.getTime() - sinceDate.getTime()) / 86_400_000) + 1;
+  if (rangeDays > MAX_CUSTOM_RANGE_DAYS) {
+    return { ok: false, error: `ช่วงวันที่ต้องไม่เกิน ${MAX_CUSTOM_RANGE_DAYS} วัน` };
+  }
+  return { ok: true, value: { since, until } };
 }
 
 function splitCsv(value: string | null): string[] {

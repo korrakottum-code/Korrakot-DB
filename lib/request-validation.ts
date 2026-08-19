@@ -68,7 +68,9 @@ export function validateDateQuery(searchParams: URLSearchParams): ValidationResu
 }
 
 /** since/until บังคับคู่กันเสมอ ไม่มี preset — ใช้กับ API ภายนอกที่ผู้เรียกระบุวันที่เอง (เช่น Qlass) */
-export function validateExternalDateRangeQuery(searchParams: URLSearchParams): ValidationResult<{ since: string; until: string }> {
+export function validateExternalDateRangeQuery(
+  searchParams: URLSearchParams
+): ValidationResult<{ since: string; until: string; groupBy: "day" | undefined }> {
   const since = searchParams.get("since");
   const until = searchParams.get("until");
   if (!since || !until) {
@@ -86,7 +88,11 @@ export function validateExternalDateRangeQuery(searchParams: URLSearchParams): V
   if (rangeDays > MAX_CUSTOM_RANGE_DAYS) {
     return { ok: false, error: `ช่วงวันที่ต้องไม่เกิน ${MAX_CUSTOM_RANGE_DAYS} วัน` };
   }
-  return { ok: true, value: { since, until } };
+  const groupByRaw = searchParams.get("groupBy");
+  if (groupByRaw !== null && groupByRaw !== "day") {
+    return { ok: false, error: "groupBy รองรับเฉพาะค่า day" };
+  }
+  return { ok: true, value: { since, until, groupBy: groupByRaw === "day" ? "day" : undefined } };
 }
 
 function splitCsv(value: string | null): string[] {

@@ -155,6 +155,27 @@ OPENAI_API_KEY=... META_ACCESS_TOKEN=... npm run refresh-checklist
 
 การคำนวณ % ใช้ `scoreChecklist()` ใน [`lib/creative-checklist.ts`](./lib/creative-checklist.ts) คิดจากน้ำหนัก (`weight`) ของแต่ละข้อที่ถูกติ๊ก เทียบกับน้ำหนักรวมทั้งหมด และเทียบกับ `passThreshold` เพื่อสรุปว่า "ผ่าน" หรือ "ต้องแก้ไข" พร้อมแสดงรายการที่ขาดให้ทีมกราฟิกไปแก้
 
+## API ภายนอก: ยอดใช้จ่ายโฆษณา (`/api/external/ads-spend`)
+
+ให้ระบบอื่น (เช่น Qlass ดึงไปคำนวณ CPO) อ่านยอดใช้จ่ายโฆษณารวมทุกบัญชี ตามช่วงวันที่ที่ระบุ — **ทางเดียว**: Korrakot-DB ไม่เชื่อมต่อ อ่าน หรือเขียนฐานข้อมูลของระบบอื่นใดเลย (ดูกติกาใน `AGENTS.md`) ระบบอื่นเป็นฝ่ายเรียกเข้ามาเอง
+
+```
+GET /api/external/ads-spend?since=2026-08-01&until=2026-08-31
+Header: Authorization: Bearer <EXTERNAL_API_KEY>
+```
+
+ตอบกลับ:
+
+```json
+{ "since": "2026-08-01", "until": "2026-08-31", "spend": 774245, "currency": "THB", "asOf": "2026-08-19T01:15:22.307Z" }
+```
+
+- คนละ auth กับ Login หน้าเว็บทีมงานโดยสิ้นเชิง (`EXTERNAL_API_KEY` ไม่ใช่ `INTERNAL_DASHBOARD_PASSWORD`) — เพิกถอนสิทธิ์ระบบภายนอกได้โดยไม่กระทบทีม
+- ตั้งค่าใน `.env.local`/Vercel: `EXTERNAL_API_KEY=` (อย่างน้อย 32 ตัวอักษร) สร้างด้วย `openssl rand -base64 48` — ถ้ายังไม่ตั้งค่า API จะปิดรับ request ทั้งหมด (fail closed)
+- ความสดของข้อมูล: เสิร์ฟจาก Postgres เสมอ แล้ว sync กับ Meta เบื้องหลังไม่เกินชั่วโมงละครั้ง (ตามที่ขอ — เรียกถี่แค่ไหนก็ไม่ยิง Meta ซ้ำถี่กว่านั้น)
+- `since`/`until` ต้องระบุคู่กันเสมอ รูปแบบ `YYYY-MM-DD` ไม่เกิน 370 วัน — ไม่มี preset ให้เดา (ต่างจาก `/api/insights` ที่ใช้ในหน้าเว็บ)
+- error ของงาน sync เบื้องหลังบันทึกลง log เดียวกับหน้าเว็บ ดูได้ที่ `/api/sync-errors`
+
 ## การตรวจสอบก่อน Merge
 
 ใช้คำสั่งเหล่านี้จากโฟลเดอร์โปรเจกต์:

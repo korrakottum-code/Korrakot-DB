@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { MAX_CREATIVE_IDS, validateCreativeQuery, validateDateQuery } from "../lib/request-validation.ts";
+import { MAX_CREATIVE_IDS, validateCreativeQuery, validateDateQuery, validateExternalDateRangeQuery } from "../lib/request-validation.ts";
 
 test("date query accepts known presets and valid custom ranges", () => {
   assert.deepEqual(validateDateQuery(new URLSearchParams("date_preset=today&refresh=1")), {
@@ -18,6 +18,21 @@ test("date query rejects invalid or excessive ranges", () => {
   assert.equal(validateDateQuery(new URLSearchParams("since=2026-07-11&until=2026-07-01")).ok, false);
   assert.equal(validateDateQuery(new URLSearchParams("since=2025-01-01&until=2026-07-11")).ok, false);
   assert.equal(validateDateQuery(new URLSearchParams("refresh=true")).ok, false);
+});
+
+test("external date range requires both dates, valid order, and a bounded span", () => {
+  assert.deepEqual(validateExternalDateRangeQuery(new URLSearchParams("since=2026-08-01&until=2026-08-31")), {
+    ok: true,
+    value: { since: "2026-08-01", until: "2026-08-31" },
+  });
+  assert.equal(validateExternalDateRangeQuery(new URLSearchParams("since=2026-08-01")).ok, false);
+  assert.equal(validateExternalDateRangeQuery(new URLSearchParams("until=2026-08-31")).ok, false);
+  assert.equal(validateExternalDateRangeQuery(new URLSearchParams("")).ok, false);
+  assert.equal(validateExternalDateRangeQuery(new URLSearchParams("since=2026-08-31&until=2026-08-01")).ok, false);
+  assert.equal(validateExternalDateRangeQuery(new URLSearchParams("since=2026-02-30&until=2026-03-01")).ok, false);
+  assert.equal(validateExternalDateRangeQuery(new URLSearchParams("since=2025-01-01&until=2026-08-31")).ok, false);
+  // ไม่มี preset ให้เดา — since/until เพี้ยนต้อง error ไม่ใช่ fallback
+  assert.equal(validateExternalDateRangeQuery(new URLSearchParams("date_preset=today")).ok, false);
 });
 
 test("creative query validates ids, alignment, and batch size", () => {

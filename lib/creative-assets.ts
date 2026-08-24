@@ -180,7 +180,12 @@ async function processCreativeBatch(
         videoBatch.forEach((videoId, idx) => {
           if (data[idx]?.code !== 200) return;
           const thumbs: { uri: string; width: number; height: number }[] = JSON.parse(data[idx].body).thumbnails?.data || [];
-          if (thumbs.length) videoThumbMap[videoId] = thumbs.sort((a, b) => b.width - a.width)[0].uri;
+          if (thumbs.length) {
+            // เอาเฟรมที่เล็กสุดแต่ยังคมพอ (>=480px) — เดิมเลือกใหญ่สุดเสมอ ซึ่งมักเป็นรูปต้นฉบับ
+            // เต็มขนาดที่ไม่มีใครมองเห็นความคมชัดเพิ่มในกริด thumbnail เล็กๆ ของเรา
+            const sorted = [...thumbs].sort((a, b) => a.width - b.width);
+            videoThumbMap[videoId] = (sorted.find((t) => t.width >= 480) || sorted[sorted.length - 1]).uri;
+          }
         });
       })()
     );
@@ -192,11 +197,16 @@ async function processCreativeBatch(
     const raw = creativeRaw[cid];
     if (!raw) continue;
     result[adId] = {
+      // raw.thumbnailUrl มาจาก thumbnail_width=800&thumbnail_height=800 ที่ขอไว้แล้วตอนดึง creative
+      // (ดูด้านบน) — ให้ความสำคัญก่อนเสมอเพราะขนาดพอดีกับที่ใช้แสดงจริง (กริด thumbnail + modal preview)
+      // แหล่งอื่น (image_hash เต็มขนาด, boosted-post full_picture, วิดีโอเฟรมเต็ม) เป็นแค่ fallback
+      // สำหรับกรณีที่ thumbnail_url ว่าง เช่น boosted post ที่ Meta ไม่ให้ thumbnail_url มาตั้งแต่ต้น
       thumbnailUrl:
+        raw.thumbnailUrl ||
         (raw.imageHash && hashToUrl[raw.imageHash]) ||
         (raw.storyId && storyToUrl[raw.storyId]) ||
         (raw.videoId && videoThumbMap[raw.videoId]) ||
-        raw.thumbnailUrl,
+        "",
       objectType: raw.objectType,
       videoId: raw.videoId,
     };

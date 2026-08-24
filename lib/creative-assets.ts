@@ -198,9 +198,10 @@ async function processCreativeBatch(
     if (!raw) continue;
     result[adId] = {
       // raw.thumbnailUrl มาจาก thumbnail_width=800&thumbnail_height=800 ที่ขอไว้แล้วตอนดึง creative
-      // (ดูด้านบน) — ให้ความสำคัญก่อนเสมอเพราะขนาดพอดีกับที่ใช้แสดงจริง (กริด thumbnail + modal preview)
+      // (ดูด้านบน) — ให้ความสำคัญก่อนเสมอสำหรับ "ทุก" creative type ไม่ใช่แค่ boosted post
+      // เพราะขนาดพอดีกับที่ใช้แสดงจริง (กริด thumbnail + modal preview max-w-2xl/672px)
       // แหล่งอื่น (image_hash เต็มขนาด, boosted-post full_picture, วิดีโอเฟรมเต็ม) เป็นแค่ fallback
-      // สำหรับกรณีที่ thumbnail_url ว่าง เช่น boosted post ที่ Meta ไม่ให้ thumbnail_url มาตั้งแต่ต้น
+      // เฉพาะตอน thumbnail_url ว่างเท่านั้น — เคสหลักคือ boosted post ที่ Meta ไม่ส่งมาให้ตั้งแต่ต้น
       thumbnailUrl:
         raw.thumbnailUrl ||
         (raw.imageHash && hashToUrl[raw.imageHash]) ||

@@ -1,8 +1,8 @@
 {
-  "version": "2026-08-17.v1",
-  "lastUpdated": "2026-08-17",
-  "passThreshold": 70,
-  "sourceNote": "เทียบ Top 39 ครีเอทีฟ (CPI ต่ำสุด) กับ Bottom 39 ครีเอทีฟ (CPI สูงสุด) ที่มีข้อมูลเชื่อถือได้ ในช่วง 2026-07-18 ถึง 2026-08-17 (Top: 30 ภาพนิ่ง, 9 วิดีโอ, ข้าม 1). คะแนนเฉลี่ย Top = 68.3%, Bottom = 60.9%. เกณฑ์ผ่านตั้งที่จุดที่แยกสองกลุ่มได้ดีที่สุด: ภาพนิ่ง 70%, วิดีโอ 50% (ไม่ใช่จุดที่ทำให้ Top ผ่านเยอะสุดแบบเดิม). ข้อที่ต้องดูวิดีโอจริง (requiresVideoPlayback) ไม่ถูกนับคะแนนอัตโนมัติ — แสดงให้ตรวจเองใน UI แทน. ⚠️ ข้อที่แยกแอดดี/แย่ไม่ได้ (Top ทำไม่ต่างจาก Bottom) ควรทบทวน: hook-pain (Top 38.5% vs Bottom 46.2%), brand-tone (Top 76.9% vs Bottom 82.1%), cta-benefits (Top 15.4% vs Bottom 15.4%), tech-ratio (Top 100% vs Bottom 100%), tech-notcut (Top 100% vs Bottom 100%), offer-anchor (Top 56.4% vs Bottom 51.3%), brand-contrast (Top 100% vs Bottom 94.9%), brand-logo (Top 89.7% vs Bottom 82.1%), proof-beforeafter (Top 35.9% vs Bottom 28.2%), offer-match (Top 69.2% vs Bottom 61.5%). อัปเดตอัตโนมัติทุกสัปดาห์ผ่าน GitHub Actions (scripts/refresh-checklist.ts) — merge ผ่าน Pull Request หลังรีวิว.",
+  "version": "2026-08-24.v1",
+  "lastUpdated": "2026-08-24",
+  "passThreshold": 75,
+  "sourceNote": "เทียบ Top 38 ครีเอทีฟ (CPI ต่ำสุด) กับ Bottom 38 ครีเอทีฟ (CPI สูงสุด) ที่มีข้อมูลเชื่อถือได้ ในช่วง 2026-07-25 ถึง 2026-08-24 (Top: 28 ภาพนิ่ง, 10 วิดีโอ, ข้าม 2). คะแนนเฉลี่ย Top = 68.1%, Bottom = 58.4%. เกณฑ์ผ่านตั้งที่จุดที่แยกสองกลุ่มได้ดีที่สุด: ภาพนิ่ง 75%, วิดีโอ 50% (ไม่ใช่จุดที่ทำให้ Top ผ่านเยอะสุดแบบเดิม). ข้อที่ต้องดูวิดีโอจริง (requiresVideoPlayback) ไม่ถูกนับคะแนนอัตโนมัติ — แสดงให้ตรวจเองใน UI แทน. ⚠️ ข้อที่แยกแอดดี/แย่ไม่ได้ (Top ทำไม่ต่างจาก Bottom) ควรทบทวน: hook-pain (Top 34.2% vs Bottom 39.5%), brand-tone (Top 84.2% vs Bottom 86.8%), brand-logo (Top 84.2% vs Bottom 84.2%), tech-ratio (Top 100% vs Bottom 100%), tech-notcut (Top 100% vs Bottom 100%), brand-contrast (Top 100% vs Bottom 97.4%), offer-match (Top 68.4% vs Bottom 60.5%). อัปเดตอัตโนมัติทุกสัปดาห์ผ่าน GitHub Actions (scripts/refresh-checklist.ts) — merge ผ่าน Pull Request หลังรีวิว.",
   "categories": [
     {
       "id": "hook",
@@ -37,7 +37,7 @@
         {
           "id": "proof-product",
           "label": "มีสินค้า/ขวดยา/เครื่องมือจริงในภาพ เพื่อสร้างความเป็นรูปธรรม",
-          "weight": 2
+          "weight": 1
         },
         {
           "id": "proof-testimonial",
@@ -136,7 +136,7 @@
     }
   ],
   "passThresholdByMedia": {
-    "image": 70,
+    "image": 75,
     "video": 50
   }
 }

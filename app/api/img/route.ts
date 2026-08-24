@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import sharp from "sharp";
 import { consumeApiRateLimit } from "@/lib/rate-limit";
 import { isAllowedMetaMediaUrl } from "@/lib/security";
 import { requireInternalApiAuth } from "@/lib/api-auth";
@@ -9,6 +10,10 @@ export const runtime = "nodejs";
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
 const FETCH_TIMEOUT_MS = 10_000;
+// ที่ใหญ่สุดที่ใช้จริงคือ modal preview (max-w-2xl ~672px) ที่เหลือเป็นแค่ thumbnail เล็กๆ ในกริด
+// เกิน 800px แค่เปลืองแบนด์วิดท์ระหว่าง Edge กับ Function โดยไม่มีใครมองเห็นความคมชัดที่เพิ่มขึ้น
+const MAX_DIMENSION = 800;
+const JPEG_QUALITY = 80;
 
 async function fetchAllowedImage(rawUrl: string): Promise<Response> {
   let currentUrl = rawUrl;
@@ -69,10 +74,29 @@ export async function GET(req: NextRequest) {
       return new NextResponse("image too large", { status: 413 });
     }
 
-    return new NextResponse(buffer, {
+    let outputBody: Buffer = Buffer.from(buffer);
+    let outputContentType = contentType;
+    // ย่อเฉพาะฟอร์แมตภาพนิ่งทั่วไป — เลี่ยง gif เพราะย่อแบบนี้จะเหลือแค่เฟรมเดียว เสียแอนิเมชัน
+    if (contentType === "image/jpeg" || contentType === "image/png" || contentType === "image/webp") {
+      try {
+        outputBody = await sharp(outputBody)
+          .resize(MAX_DIMENSION, MAX_DIMENSION, { fit: "inside", withoutEnlargement: true })
+          .jpeg({ quality: JPEG_QUALITY })
+          .toBuffer();
+        outputContentType = "image/jpeg";
+      } catch {
+        // ย่อไม่สำเร็จ (ไฟล์เพี้ยน ฯลฯ) — ส่งต้นฉบับแทนดีกว่าทำรูปทั้งอันหาย
+      }
+    }
+
+    // Buffer<ArrayBufferLike> ไม่ตรงกับ BodyInit ใน type defs ปัจจุบัน (ArrayBufferLike vs ArrayBuffer) —
+    // ห่อเป็น Uint8Array ธรรมดาให้ตรงชนิดแทน ค่าไบต์เหมือนเดิมทุกประการ
+    return new NextResponse(new Uint8Array(outputBody), {
       headers: {
-        "Content-Type": contentType,
-        "Cache-Control": "private, max-age=86400, stale-while-revalidate=3600",
+        "Content-Type": outputContentType,
+        // 7 วัน — thumbnail ครีเอทีฟแทบไม่เปลี่ยน ยืด cache ฝั่ง browser ลดจำนวนครั้งที่ต้องยิงเข้า
+        // origin ซ้ำสำหรับคนเดิม (ยังเป็น private เหมือนเดิม ไม่กระทบการเช็คสิทธิ์)
+        "Cache-Control": "private, max-age=604800, stale-while-revalidate=86400",
         "X-Content-Type-Options": "nosniff",
       },
     });

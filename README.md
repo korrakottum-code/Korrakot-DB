@@ -176,6 +176,44 @@ Header: Authorization: Bearer <EXTERNAL_API_KEY>
 - `since`/`until` ต้องระบุคู่กันเสมอ รูปแบบ `YYYY-MM-DD` ไม่เกิน 370 วัน — ไม่มี preset ให้เดา (ต่างจาก `/api/insights` ที่ใช้ในหน้าเว็บ)
 - error ของงาน sync เบื้องหลังบันทึกลง log เดียวกับหน้าเว็บ ดูได้ที่ `/api/sync-errors`
 
+## API ภายนอก: ผลโฆษณาแยกรายสาขา (`/api/external/branch-metrics`)
+
+ให้ระบบอื่นอ่านผลโฆษณา **แยกตามสาขา** ได้ — ต่างจาก `/api/external/ads-spend` ที่ให้ยอดใช้จ่ายรวมก้อนเดียว ใช้ `EXTERNAL_API_KEY` ตัวเดียวกัน และเป็น **ทางเดียว** เหมือนกัน (Korrakot-DB ไม่เชื่อมต่อฐานข้อมูลของระบบอื่น ระบบอื่นเป็นฝ่ายเรียกเข้ามา)
+
+```
+GET /api/external/branch-metrics?since=2026-08-01&until=2026-08-31
+Header: Authorization: Bearer <EXTERNAL_API_KEY>
+```
+
+ตอบกลับ:
+
+```json
+{
+  "since": "2026-08-01",
+  "until": "2026-08-31",
+  "currency": "THB",
+  "asOf": "2026-08-29T01:15:22.307Z",
+  "totals":   { "spend": 774245, "impressions": 0, "reach": 0, "clicks": 0,
+                "inbox": 9012, "leads": 2604, "ctr": null, "cpc": null,
+                "cpm": null, "cpi": 85.91, "cpl": 297.33 },
+  "branches": [
+    { "code": "NMA", "name": "โคราช", "dimension": "branch",
+      "spend": 48210, "impressions": 512340, "reach": 401220, "clicks": 6120,
+      "inbox": 615, "leads": 178, "ctr": 0.0119, "cpc": 7.88,
+      "cpm": 94.1, "cpi": 78.39, "cpl": 270.84 }
+  ],
+  "excluded": [ { "dimension": "special", "ads": 42, "spend": 18300 } ]
+}
+```
+
+- `branches` นับเฉพาะ **จุดขายจริง** คือ `dimension` เป็น `branch` หรือ `class_go` เรียงตาม `spend` มากไปน้อย
+- เพจหลัก หน้าบ้าน IG ทรัพยากรบุคคล ส่วนกลาง สาขาทดสอบ และแอดที่พาร์สชื่อไม่ออก **ไม่ปน**อยู่ใน `branches` แต่รายงานยอดไว้ใน `excluded` เพื่อให้ผู้เรียกกระทบยอดกับ `/api/external/ads-spend` ได้ว่าไม่มีงบหายไปเงียบๆ
+- `totals` เป็นผลรวมของ `branches` เท่านั้น (ไม่รวม `excluded`) จึงมักน้อยกว่า `spend` ของ `ads-spend` ที่รวมทุกบัญชี
+- `cpi`/`cpl`/`ctr`/`cpc`/`cpm` เป็น `null` เมื่อตัวหารเป็นศูนย์ ไม่ใช่ `0` — ผู้เรียกต้องเช็คก่อนใช้
+- ใช้ branch map ชุดเดียวกับหน้าเว็บภายใน (DB > `data/branch-config.json` > hardcode) การแก้รายชื่อสาขายังต้องผ่าน PR เหมือนเดิม
+- **`KKC` กับ `KKG` เป็นคนละรหัสในข้อมูลย้อนหลัง** แม้ปัจจุบันสาขากังสดาลจะย้ายมาใช้ `KKG` แล้ว — API ตอบตามข้อมูลจริงไม่รวมให้ ถ้าต้องการดูเป็นสาขาเดียวกันในช่วงที่คร่อมการเปลี่ยนรหัส ผู้เรียกต้องบวกเอง
+- ข้อจำกัดอื่นเหมือน `ads-spend` ทุกอย่าง: `since`/`until` บังคับคู่กัน รูปแบบ `YYYY-MM-DD` ไม่เกิน 370 วัน · จำกัด 120 ครั้ง/นาที · เสิร์ฟจาก Postgres แล้ว sync กับ Meta เบื้องหลังไม่เกินชั่วโมงละครั้ง
+
 ## การตรวจสอบก่อน Merge
 
 ใช้คำสั่งเหล่านี้จากโฟลเดอร์โปรเจกต์:
@@ -212,6 +250,8 @@ Creative บางรายการอาจไม่มี thumbnail หรื
 | `app/ads/page.tsx` | ตาราง Campaign |
 | `app/settings/page.tsx` | รายชื่อสาขาแบบ Read only |
 | `app/api/insights/route.ts` | ดึงและรวม Insights |
+| `app/api/external/branch-metrics/route.ts` | API ภายนอก: ผลโฆษณาแยกรายสาขา |
+| `lib/branch-metrics.ts` | รวมยอดโฆษณาต่อสาขา (ฟังก์ชันบริสุทธิ์ ทดสอบได้) |
 | `app/api/campaigns/route.ts` | ดึงและรวม Campaign |
 | `app/api/creative/route.ts` | ดึง thumbnail ของ Creative |
 | `data/branch-config.json` | รายชื่อสาขาที่ deploy ไปพร้อมโค้ด |

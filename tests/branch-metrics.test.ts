@@ -89,6 +89,44 @@ test("เพจหลัก / HR / สาขาทดสอบ / พาร์ส
   assert.equal(byDimension.unknown, 5);
 });
 
+test("กองที่ถูกกันออกต้องรายงาน inbox/leads ครบ ไม่ใช่แค่งบ", () => {
+  const result = aggregateBranchMetrics(
+    [
+      row("NMA", "โคราช", { spend: 100, inbox: 10, leads: 4 }),
+      row("CLS", "เพจหลัก", { spend: 70, impressions: 5000, reach: 4000, clicks: 250, inbox: 35, leads: 7 }),
+      row("CLS", "เพจหลัก", { spend: 30, impressions: 1000, reach: 800, clicks: 50, inbox: 15, leads: 3 }),
+    ],
+    { branchMap }
+  );
+
+  const special = result.excluded.find((e) => e.dimension === "special");
+  assert.ok(special, "ต้องมีกอง special");
+  assert.equal(special.ads, 2, "นับจำนวนโฆษณาเหมือนเดิม");
+  assert.equal(special.spend, 100, "งบยังปัดเป็นบาทเต็มเหมือนเดิม");
+  assert.equal(special.inbox, 50, "ต้องรวม inbox ให้ด้วย");
+  assert.equal(special.leads, 10);
+  assert.equal(special.impressions, 6000);
+  assert.equal(special.reach, 4800);
+  assert.equal(special.clicks, 300);
+  assert.equal(special.cpi, 2, "ต้นทุนต่อคนทัก = 100 / 50");
+  assert.equal(special.cpl, 10);
+
+  assert.equal(result.totals.spend, 100, "totals ยังนับเฉพาะสาขาขาย ไม่เปลี่ยน");
+  assert.equal(result.totals.inbox, 10);
+});
+
+test("กองที่ถูกกันออกไม่มี inbox เลย ต้องไม่หาร 0", () => {
+  const result = aggregateBranchMetrics(
+    [row("HR", "ทรัพยากรบุคคล", { spend: 60, inbox: 0, leads: 0 })],
+    { branchMap }
+  );
+  const hr = result.excluded.find((e) => e.dimension === "non_sales");
+  assert.ok(hr);
+  assert.equal(hr.inbox, 0);
+  assert.equal(hr.cpi, null, "ไม่มีคนทัก ต้องเป็น null ไม่ใช่ Infinity");
+  assert.equal(hr.cpl, null);
+});
+
 test("รหัสสาขาที่ไม่มีใน branch map ถือว่า unknown ไม่ปนกับสาขาจริง", () => {
   const result = aggregateBranchMetrics([row("ZZZ", "ไม่รู้จัก", { spend: 40 })], { branchMap });
   assert.equal(result.branches.length, 0);

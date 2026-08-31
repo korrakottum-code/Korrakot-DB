@@ -19,10 +19,9 @@ export interface BranchMetricRow extends ReportingTotals {
   dimension: ReportingDimension;
 }
 
-export interface ExcludedGroup {
+export interface ExcludedGroup extends ReportingTotals {
   dimension: ReportingDimension;
   ads: number;
-  spend: number;
 }
 
 export interface BranchMetricsResult {
@@ -57,7 +56,7 @@ export function aggregateBranchMetrics(
   const knownBranchCodes = new Set(Object.keys(options.branchMap).map((code) => code.toUpperCase()));
 
   const buckets = new Map<string, { name: string; dimension: ReportingDimension; rows: InsightForBranch[] }>();
-  const excluded = new Map<ReportingDimension, { ads: number; spend: number }>();
+  const excluded = new Map<ReportingDimension, InsightForBranch[]>();
 
   for (const row of rows) {
     const dimension = classifyDimension(row.parsed, {
@@ -67,10 +66,9 @@ export function aggregateBranchMetrics(
     });
 
     if (!SALES_DIMENSIONS.has(dimension)) {
-      const bucket = excluded.get(dimension) || { ads: 0, spend: 0 };
-      bucket.ads += 1;
-      bucket.spend += Number.isFinite(row.spend) ? row.spend : 0;
-      excluded.set(dimension, bucket);
+      const bucket = excluded.get(dimension);
+      if (bucket) bucket.push(row);
+      else excluded.set(dimension, [row]);
       continue;
     }
 
@@ -107,7 +105,11 @@ export function aggregateBranchMetrics(
     branches,
     totals: sumReportingRows(salesRows),
     excluded: [...excluded.entries()]
-      .map(([dimension, value]) => ({ dimension, ads: value.ads, spend: Math.round(value.spend) }))
+      .map(([dimension, groupRows]) => {
+        const totals = sumReportingRows(groupRows);
+        // ปัดเป็นบาทเต็มเหมือนเดิม เพื่อไม่ให้ค่าที่ผู้เรียกใช้อยู่แล้วเปลี่ยน
+        return { dimension, ads: groupRows.length, ...totals, spend: Math.round(totals.spend) };
+      })
       .sort((a, b) => b.spend - a.spend),
   };
 }

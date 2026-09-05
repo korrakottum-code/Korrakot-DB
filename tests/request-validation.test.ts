@@ -23,7 +23,7 @@ test("date query rejects invalid or excessive ranges", () => {
 test("external date range requires both dates, valid order, and a bounded span", () => {
   assert.deepEqual(validateExternalDateRangeQuery(new URLSearchParams("since=2026-08-01&until=2026-08-31")), {
     ok: true,
-    value: { since: "2026-08-01", until: "2026-08-31" },
+    value: { since: "2026-08-01", until: "2026-08-31", groupBy: undefined },
   });
   assert.equal(validateExternalDateRangeQuery(new URLSearchParams("since=2026-08-01")).ok, false);
   assert.equal(validateExternalDateRangeQuery(new URLSearchParams("until=2026-08-31")).ok, false);
@@ -33,6 +33,15 @@ test("external date range requires both dates, valid order, and a bounded span",
   assert.equal(validateExternalDateRangeQuery(new URLSearchParams("since=2025-01-01&until=2026-08-31")).ok, false);
   // ไม่มี preset ให้เดา — since/until เพี้ยนต้อง error ไม่ใช่ fallback
   assert.equal(validateExternalDateRangeQuery(new URLSearchParams("date_preset=today")).ok, false);
+});
+
+test("external date range accepts groupBy=day and rejects other groupBy values", () => {
+  assert.deepEqual(validateExternalDateRangeQuery(new URLSearchParams("since=2026-08-01&until=2026-08-31&groupBy=day")), {
+    ok: true,
+    value: { since: "2026-08-01", until: "2026-08-31", groupBy: "day" },
+  });
+  assert.equal(validateExternalDateRangeQuery(new URLSearchParams("since=2026-08-01&until=2026-08-31&groupBy=week")).ok, false);
+  assert.equal(validateExternalDateRangeQuery(new URLSearchParams("since=2026-08-01&until=2026-08-31&groupBy=")).ok, false);
 });
 
 test("creative query validates ids, alignment, and batch size", () => {

@@ -370,6 +370,21 @@ export default function Dashboard() {
   }, [load, datePreset]);
 
   const unparsedInsights = insights.filter((i) => !i.parsed.isParsed);
+  // แยกสองอาการที่ต่างกัน: ลงรหัสแล้วแต่ผิดกติกา vs ยังไม่เคยลงรหัส
+  const invalidCodeInsights = unparsedInsights.filter((i) => i.parsed.status === "invalid_code");
+  const invalidCodeSpend = invalidCodeInsights.reduce((sum, i) => sum + i.spend, 0);
+
+  // รหัสหมวดย่อยที่ยังไม่ได้ลงทะเบียนในหน้าตั้งค่า (ชื่อแอดถูกกติกาแล้ว)
+  const unregisteredSubs = (() => {
+    const map: Record<string, { spend: number; example: string }> = {};
+    for (const i of insights) {
+      if (i.parsed.isSubRegistered || !i.parsed.serviceCode) continue;
+      const code = i.parsed.serviceCode;
+      if (!map[code]) map[code] = { spend: 0, example: i.adName };
+      map[code].spend += i.spend;
+    }
+    return Object.entries(map).sort((a, b) => b[1].spend - a[1].spend);
+  })();
 
   // Unknown branch codes — parsed OK but branchCode not in BRANCH_MAP
   const unknownBranches = (() => {
@@ -764,7 +779,10 @@ export default function Dashboard() {
               className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-yellow-900/30 transition-colors"
             >
               <span className="text-yellow-400 text-sm font-medium">
-                ⚠️ ระบุรูปแบบไม่ได้ ({unparsedInsights.length} รายการ) — คลิกเพื่อดู
+                ⚠️ อ่านรหัสโปรแกรมไม่ได้ ({unparsedInsights.length} รายการ)
+                {invalidCodeInsights.length > 0 && (
+                  <> — รหัสไม่ถูก {invalidCodeInsights.length} รายการ {fmtB(invalidCodeSpend)}</>
+                )} — คลิกเพื่อดู
               </span>
               <span className="text-yellow-500 text-xs">{showUnparsed ? "▲ ซ่อน" : "▼ แสดง"}</span>
             </button>
@@ -775,6 +793,7 @@ export default function Dashboard() {
                     <tr className="border-b border-yellow-700/20">
                       <th className="text-left py-2 px-3 text-yellow-500 font-medium">Ad Account</th>
                       <th className="text-left py-2 px-3 text-yellow-500 font-medium">Ad Name</th>
+                      <th className="text-left py-2 px-3 text-yellow-500 font-medium">สาเหตุ</th>
                       <th className="text-right py-2 px-3 text-yellow-500 font-medium">Spend</th>
                       <th className="text-right py-2 px-3 text-yellow-500 font-medium">Inbox</th>
                     </tr>
@@ -787,6 +806,9 @@ export default function Dashboard() {
                         <tr key={i} className="border-b border-yellow-700/10 hover:bg-yellow-900/20">
                           <td className="py-1.5 px-3 text-yellow-300/70">{ins.accountId} — {ins.accountName}</td>
                           <td className="py-1.5 px-3 text-white font-mono">{ins.adName}</td>
+                          <td className="py-1.5 px-3 text-yellow-300/80">
+                            {ins.parsed.status === "invalid_code" ? "รหัสไม่ถูกกติกา" : "ยังไม่ลงรหัส"}
+                          </td>
                           <td className="py-1.5 px-3 text-right text-yellow-300">{fmtB(ins.spend)}</td>
                           <td className="py-1.5 px-3 text-right text-yellow-300">{fmt(ins.inbox)}</td>
                         </tr>
@@ -820,6 +842,34 @@ export default function Dashboard() {
             >
               <Settings2 className="w-3.5 h-3.5" />
               เพิ่มสาขาในหน้าตั้งค่า
+            </Link>
+          </div>
+        )}
+
+        {/* Unregistered sub code warning — ชื่อแอดถูกกติกา แต่รหัสหมวดย่อยยังไม่มีในตารางตั้งค่า */}
+        {unregisteredSubs.length > 0 && (
+          <div className="bg-orange-900/20 border border-orange-700/50 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <AlertTriangle className="w-4 h-4 text-orange-400 flex-shrink-0" />
+              <span className="text-orange-400 text-sm font-medium">
+                รหัสหมวดย่อยยังไม่ลงทะเบียน ({unregisteredSubs.length} รหัส)
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {unregisteredSubs.map(([code, { spend, example }]) => (
+                <div key={code} className="bg-orange-900/30 border border-orange-700/40 rounded-lg px-3 py-1.5 text-xs">
+                  <span className="font-mono text-orange-300 font-bold">{code}</span>
+                  <span className="text-orange-400/70 ml-2">{fmtB(spend)}</span>
+                  <span className="text-orange-400/50 ml-2 truncate max-w-[120px] inline-block align-bottom" title={example}>{example}</span>
+                </div>
+              ))}
+            </div>
+            <Link
+              href="/settings"
+              className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-600/20 hover:bg-orange-600/30 border border-orange-600/40 rounded-lg text-xs text-orange-300 font-medium transition-colors"
+            >
+              <Settings2 className="w-3.5 h-3.5" />
+              เพิ่มหมวดย่อยในหน้าตั้งค่า
             </Link>
           </div>
         )}

@@ -28,9 +28,9 @@ export const BRANCH_MAP: Record<string, string> = {
   LAD: "ลาดกระบัง",
   CHG: "Class Go ชุมแพ",
   BPG: "Class Go บางพลี",
-  "N-BPG": "Class Go บางพลี",
   LEI: "เลย",
   HB: "หน้าบ้าน",
+  HR: "ทรัพยากรบุคคล",
 };
 
 /* ─── Dynamic branch config from JSON file ─── */
@@ -157,11 +157,12 @@ export function getSubMap(): Record<string, string> {
   return SUB_MAP;
 }
 
-// Asset (campaign type) codes
+// Asset (campaign type) codes — มีแค่ 4 ตัวนี้เท่านั้นตามกติกาตั้งชื่อ
 export const ASSET_MAP: Record<string, string> = {
   P: "โปรโมชั่น",
   R: "รีวิว",
   C: "เคสรีวิว",
+  A: "Awareness",
 };
 
 // Program codes
@@ -187,10 +188,59 @@ export const PROGRAM_MAP: Record<string, string> = {
 };
 
 // Special freeform AW codes that don't follow [ASSET][PROGRAM][SUB]-[ID] pattern
+// (คีย์เทียบแบบไม่สนตัวพิมพ์ — ชื่อจริงเขียน "pagelike" ตัวเล็ก)
 export const SPECIAL_AW_MAP: Record<string, string> = {
   "หน้าบ้าน": "หน้าบ้าน",
   "IG": "IG",
+  "pagelike": "Pagelike",
 };
+
+/**
+ * รหัสสาขาที่จริงๆ ไม่ใช่สาขาขายบริการ — แอดใต้รหัสพวกนี้ไม่มีรหัสโปรแกรม
+ * จึงจัดเป็นหมวดของตัวเองแทนที่จะถูกนับเป็น "ยังไม่ลงรหัส"
+ * เช่น "HR Class" = แอดรับสมัครงานของฝ่ายทรัพยากรบุคคล
+ */
+export const NON_SERVICE_BRANCH_PROGRAM: Record<string, string> = {
+  HR: "ทรัพยากรบุคคล",
+  HB: "หน้าบ้าน",
+};
+
+/**
+ * รหัสสาขาเก่าที่เลิกใช้แล้ว → รหัสที่ถูกต้อง
+ * ชื่อแอดเดิมใน Meta ยังเขียนรหัสเก่าอยู่ จึงต้องยุบให้เองตอนอ่าน
+ * ไม่งั้นยอดของสาขานั้นจะหลุดไปเป็น "สาขาไม่รู้จัก"
+ * แอดที่ยังใช้รหัสเก่าจะถูกทำเครื่องหมาย isCanonicalName = false ไว้ให้ตามไปแก้ชื่อ
+ */
+export const BRANCH_ALIASES: Record<string, string> = {
+  "N-BPG": "BPG",
+};
+
+/** ป้ายกำกับกลุ่มแอดที่ "พยายามลงรหัสแล้วแต่รหัสผิดกติกา" — รวมเป็นก้อนเดียว ไม่แตกเป็นโปรแกรมปลอม */
+export const INVALID_CODE_LABEL = "รหัสไม่ถูก";
+/** ป้ายกำกับกลุ่มแอดที่ยังไม่ได้ลงรหัสเลย (ชื่ออิสระ) */
+export const NOT_CODED_LABEL = "ยังไม่ลงรหัส";
+
+/**
+ * กติกาตั้งชื่อ AW: [ASSET][PROGRAM][SUB 2 หลัก]-[NO 4 หลัก]
+ *  - ASSET   = P โปรโมชั่น | C เคสรีวิว | R รีวิว | A awareness (มีแค่ 4 ตัวนี้)
+ *  - PROGRAM = 1 ตัวอักษร ยกเว้น ALL (โปรแกรมรวม) ที่เป็น 3 ตัวอักษร
+ *  - SUB     = เลขหมวดโปรแกรม 2 หลักเท่านั้น
+ *  - NO      = ลำดับคอนเทนต์ในโปรแกรม 4 หลักเท่านั้น
+ */
+const AW_CODE_PATTERN = /^([PRCA])(ALL|[A-Z])(\d{2})-(\d{4})$/i;
+
+/**
+ * "เหมือนจะพยายามลงรหัส" — ใช้แยกแอดที่ลงรหัสผิด (รหัสไม่ถูก)
+ * ออกจากแอดที่ไม่เคยลงรหัสเลย (ยังไม่ลงรหัส) เช่น "Hifu 990"
+ */
+const AW_ATTEMPT_PATTERN = /^[A-Za-z]+\d{1,3}-\d+$/;
+
+/** สถานะการอ่านชื่อแอด */
+export type AdNameStatus =
+  | "ok"           // ตรงกติกาและรหัสลงทะเบียนครบ
+  | "special"      // หมวดพิเศษ: หน้าบ้าน / IG / Pagelike / ทรัพยากรบุคคล
+  | "invalid_code" // พยายามลงรหัสแล้วแต่ผิดกติกา หรือรหัสยังไม่ลงทะเบียน
+  | "not_coded";   // ยังไม่ได้ลงรหัสเลย
 
 // Sub codes: [PROGRAM][SUB_NUMBER] -> label
 export const SUB_MAP: Record<string, string> = {
@@ -234,6 +284,11 @@ export interface ParsedAdName {
   creativeId: string;
   awCode: string;
   isParsed: boolean;     // false if format not recognized
+  status: AdNameStatus;  // เหตุผลที่อ่านได้/ไม่ได้ ใช้แยกกลุ่มในหน้าเตือน
+  /** ชื่อขึ้นต้นด้วยรหัสสาขาที่ลงทะเบียนไว้แล้วตามด้วยรหัส AW ตรงกติกา ไม่มีคำนำหน้า */
+  isCanonicalName: boolean;
+  /** รหัสหมวดย่อย (เช่น F02) มีอยู่ในตารางตั้งค่าแล้วหรือยัง */
+  isSubRegistered: boolean;
 }
 
 export function parseAdName(adName: string): ParsedAdName {
@@ -244,13 +299,19 @@ export function parseAdName(adName: string): ParsedAdName {
   const parts = raw.split(" ");
   let branchCode = "";
   let branchIndex = -1;
+  let usedAlias = false;
   for (let i = 0; i < parts.length; i++) {
-    if (branchMap[parts[i].toUpperCase()]) {
-      branchCode = parts[i].toUpperCase();
+    const token = parts[i].toUpperCase();
+    // รหัสเก่าที่เลิกใช้แล้วถูกยุบเป็นรหัสจริงก่อน แม้จะยังค้างอยู่ในตารางตั้งค่า
+    const canonical = BRANCH_ALIASES[token] || token;
+    if (branchMap[canonical]) {
+      branchCode = canonical;
       branchIndex = i;
+      usedAlias = canonical !== token;
       break;
     }
   }
+  const branchFound = branchIndex >= 0;
   // fallback: use first token as branch code even if not in map
   if (!branchCode) {
     branchCode = parts[0] || "";
@@ -261,91 +322,158 @@ export function parseAdName(adName: string): ParsedAdName {
   // AW code = everything after branch token
   const awCode = parts.slice(branchIndex + 1).join(" ").trim();
 
-  let assetCode = "";
-  let programCode = "";
-  let subCode = "";
-  let creativeId = "";
-  let isParsed = false;
-
-  // Check if the entire ad name (no branch prefix) is a special label e.g. "IG"
-  const specialLabelFull = SPECIAL_AW_MAP[raw];
+  // ── หมวดพิเศษ: ทั้งชื่อคือป้ายพิเศษ เช่นแอดที่ชื่อว่า "IG" เฉยๆ ──
+  const specialLabelFull = lookupSpecialLabel(raw);
   if (specialLabelFull) {
-    return {
-      branch: specialLabelFull, branchCode: raw,
-      asset: specialLabelFull, assetCode: raw,
-      program: specialLabelFull, programCode: raw,
-      sub: "", subCode: "",
-      service: specialLabelFull, serviceCode: raw,
-      campaignType: specialLabelFull, campaignTypeCode: raw,
-      creativeId: "", awCode: raw,
-      isParsed: true,
-    };
+    return specialResult(specialLabelFull, specialLabelFull, raw, raw);
   }
 
-  // Check special freeform AW codes first (หน้าบ้าน, IG, etc.)
-  const specialLabel = SPECIAL_AW_MAP[awCode];
+  // ── หมวดพิเศษที่มีรหัสสาขานำหน้า เช่น "CLS หน้าบ้าน", "CLS pagelike" ──
+  const specialLabel = lookupSpecialLabel(awCode);
   if (specialLabel) {
-    return {
-      branch, branchCode,
-      asset: specialLabel, assetCode: awCode,
-      program: specialLabel, programCode: awCode,
-      sub: "", subCode: "",
-      service: specialLabel, serviceCode: awCode,
-      campaignType: specialLabel, campaignTypeCode: awCode,
-      creativeId: "", awCode,
-      isParsed: true,
-    };
+    return specialResult(branch, specialLabel, branchCode, awCode);
   }
 
-  // AW format: [ASSET][PROGRAM][SUB]-[CREATIVE_ID]
-  // ASSET = P|R|C (1 char)
-  // PROGRAM = 1+ uppercase letters (B, F, ALL, etc.)
-  // SUB = 1-2 digits
-  // CREATIVE_ID = 4 digits after dash
-  const awMatch = awCode.match(/^([PRC])([A-Z]+)(\d{1,2})-(\d+)$/i);
+  const awMatch = awCode.match(AW_CODE_PATTERN);
 
   if (awMatch) {
-    assetCode = awMatch[1].toUpperCase();
-    programCode = awMatch[2].toUpperCase();
-    subCode = awMatch[3];
-    creativeId = awMatch[4];
-    isParsed = true;
-  } else {
-    // fallback — not recognized
-    assetCode = awCode.charAt(0).toUpperCase();
-    programCode = awCode.slice(1).replace(/\d.*$/, "").toUpperCase();
-    subCode = awCode.match(/([A-Z]+)(\d+)-/i)?.[2] || "0";
-    creativeId = awCode.match(/-(\d+)$/)?.[1] || "";
+    const assetCode = awMatch[1].toUpperCase();
+    const programCode = awMatch[2].toUpperCase();
+    const subCode = awMatch[3];
+    const creativeId = awMatch[4];
+
+    // รหัสโปรแกรมต้องลงทะเบียนไว้แล้ว ไม่งั้นถือว่ารหัสผิด — ไม่ตั้งชื่อโปรแกรมเองจากตัวอักษรดิบ
+    const programMap = getProgramMap();
+    const program = programMap[programCode];
+    if (!program) {
+      return codelessResult(branch, branchCode, awCode, "invalid_code");
+    }
+
+    // รหัสหมวดย่อยมาตรฐาน = แบบเดียวกับใน ad name จริง คือเลข 2 หลัก (B02, ALL03)
+    // ลอง lookup ตามลำดับ: แบบ 2 หลัก (มาตรฐานใน DB) → ตามที่เขียนมาจริง → แบบไม่มีศูนย์ (คีย์เก่าใน hardcode)
+    const subMap = getSubMap();
+    const subKeyPadded = `${programCode}${subCode.padStart(2, "0")}`;
+    const subKeyRaw = `${programCode}${subCode}`;
+    const subKeyUnpadded = `${programCode}${String(parseInt(subCode, 10) || 0)}`;
+    const subLabel = subMap[subKeyPadded] || subMap[subKeyRaw] || subMap[subKeyUnpadded];
+    const isSubRegistered = Boolean(subLabel);
+    const sub = subLabel || subCode;
+
+    const asset = ASSET_MAP[assetCode] || assetCode;
+    const serviceCode = `${programCode}${subCode.padStart(2, "0")}`;
+    const service = sub && sub !== "รวม" ? `${program} ${sub}` : program;
+
+    return {
+      branch,
+      branchCode,
+      asset,
+      assetCode,
+      program,
+      programCode,
+      sub,
+      subCode,
+      service,
+      serviceCode,
+      campaignType: asset,
+      campaignTypeCode: assetCode,
+      creativeId,
+      awCode,
+      isParsed: true,
+      status: "ok",
+      // ตรงกติกาเต็มรูปแบบ = รหัสสาขาที่ลงทะเบียนแล้วอยู่ต้นชื่อ ไม่มีคำนำหน้า
+      // และต้องเป็นรหัสปัจจุบัน ไม่ใช่รหัสเก่าที่ถูกยุบมา
+      isCanonicalName: branchFound && branchIndex === 0 && !usedAlias,
+      isSubRegistered,
+    };
   }
 
-  const asset = ASSET_MAP[assetCode] || assetCode;
-  const program = getProgramMap()[programCode] || programCode;
-  // รหัสหมวดย่อยมาตรฐาน = แบบเดียวกับใน ad name จริง คือเลข 2 หลัก (B02, ALL03)
-  // ลอง lookup ตามลำดับ: แบบ 2 หลัก (มาตรฐานใน DB) → ตามที่เขียนมาจริง → แบบไม่มีศูนย์ (คีย์เก่าใน hardcode)
-  const subMap = getSubMap();
-  const subKeyPadded = `${programCode}${subCode.padStart(2, "0")}`;
-  const subKeyRaw = `${programCode}${subCode}`;
-  const subKeyUnpadded = `${programCode}${String(parseInt(subCode, 10) || 0)}`;
-  const sub = subMap[subKeyPadded] || subMap[subKeyRaw] || subMap[subKeyUnpadded] || subCode;
+  // ── รหัสสาขาที่ไม่ใช่สาขาขายบริการ (HR, HB) และไม่มีรหัส AW ต่อท้าย ──
+  const nonServiceLabel = NON_SERVICE_BRANCH_PROGRAM[branchCode];
+  if (branchFound && nonServiceLabel) {
+    return specialResult(branch, nonServiceLabel, branchCode, awCode);
+  }
 
-  const serviceCode = `${programCode}${subCode.padStart(2, "0")}`;
-  const service = sub && sub !== "รวม" ? `${program} ${sub}` : program;
+  // ── อ่านรหัสไม่ได้: แยกว่า "ลงรหัสผิด" หรือ "ยังไม่ลงรหัสเลย" ──
+  const lastToken = parts[parts.length - 1] || "";
+  const looksLikeAttempt =
+    AW_ATTEMPT_PATTERN.test(awCode) || AW_ATTEMPT_PATTERN.test(lastToken);
 
+  return codelessResult(
+    branch,
+    branchCode,
+    awCode,
+    looksLikeAttempt ? "invalid_code" : "not_coded"
+  );
+}
+
+/** เทียบป้ายพิเศษแบบไม่สนตัวพิมพ์ใหญ่เล็ก */
+function lookupSpecialLabel(value: string): string | undefined {
+  if (!value) return undefined;
+  const key = Object.keys(SPECIAL_AW_MAP).find(
+    (k) => k.toLowerCase() === value.toLowerCase()
+  );
+  return key ? SPECIAL_AW_MAP[key] : undefined;
+}
+
+/** ผลลัพธ์ของหมวดพิเศษ (หน้าบ้าน / IG / Pagelike / ทรัพยากรบุคคล) */
+function specialResult(
+  branch: string,
+  label: string,
+  branchCode: string,
+  awCode: string
+): ParsedAdName {
   return {
     branch,
     branchCode,
-    asset,
-    assetCode,
-    program,
-    programCode,
-    sub,
-    subCode,
-    service,
-    serviceCode,
-    campaignType: asset,
-    campaignTypeCode: assetCode,
-    creativeId,
+    asset: label,
+    assetCode: awCode,
+    program: label,
+    programCode: label,
+    sub: "",
+    subCode: "",
+    service: label,
+    serviceCode: awCode,
+    campaignType: label,
+    campaignTypeCode: awCode,
+    creativeId: "",
     awCode,
-    isParsed,
+    isParsed: true,
+    status: "special",
+    isCanonicalName: false,
+    isSubRegistered: true,
+  };
+}
+
+/**
+ * ผลลัพธ์ของแอดที่อ่านรหัสโปรแกรมไม่ได้
+ * programCode ปล่อยว่างไว้ตั้งใจ เพื่อไม่ให้ไปโผล่เป็นตัวเลือกโปรแกรมปลอมในตัวกรอง
+ * ทุกตัวจะถูกรวมเป็นก้อนเดียวใต้ป้าย "รหัสไม่ถูก" หรือ "ยังไม่ลงรหัส"
+ */
+function codelessResult(
+  branch: string,
+  branchCode: string,
+  awCode: string,
+  status: "invalid_code" | "not_coded"
+): ParsedAdName {
+  const label = status === "invalid_code" ? INVALID_CODE_LABEL : NOT_CODED_LABEL;
+  return {
+    branch,
+    branchCode,
+    asset: "",
+    assetCode: "",
+    program: label,
+    programCode: "",
+    sub: "",
+    subCode: "",
+    service: label,
+    serviceCode: "",
+    campaignType: "",
+    campaignTypeCode: "",
+    creativeId: "",
+    awCode,
+    isParsed: false,
+    status,
+    isCanonicalName: false,
+    isSubRegistered: true,
   };
 }

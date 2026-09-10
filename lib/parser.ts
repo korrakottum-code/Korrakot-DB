@@ -29,7 +29,6 @@ export const BRANCH_MAP: Record<string, string> = {
   CHG: "Class Go ชุมแพ",
   BPG: "Class Go บางพลี",
   LEI: "เลย",
-  HB: "หน้าบ้าน",
   HR: "ทรัพยากรบุคคล",
 };
 
@@ -202,7 +201,6 @@ export const SPECIAL_AW_MAP: Record<string, string> = {
  */
 export const NON_SERVICE_BRANCH_PROGRAM: Record<string, string> = {
   HR: "ทรัพยากรบุคคล",
-  HB: "หน้าบ้าน",
 };
 
 /**
@@ -387,7 +385,7 @@ export function parseAdName(adName: string): ParsedAdName {
     };
   }
 
-  // ── รหัสสาขาที่ไม่ใช่สาขาขายบริการ (HR, HB) และไม่มีรหัส AW ต่อท้าย ──
+  // ── รหัสสาขาที่ไม่ใช่สาขาขายบริการ (HR) และไม่มีรหัส AW ต่อท้าย ──
   const nonServiceLabel = NON_SERVICE_BRANCH_PROGRAM[branchCode];
   if (branchFound && nonServiceLabel) {
     return specialResult(branch, nonServiceLabel, branchCode, awCode);

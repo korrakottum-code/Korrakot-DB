@@ -1,0 +1,13 @@
+-- ลบรหัสสาขาเก่า N-BPG ออกจากตารางตั้งค่า ให้บางพลีเหลือรหัสเดียวคือ BPG
+--
+-- ชื่อแอดใน Meta ยังเขียน "N-BPG ..." อยู่ 297 แอด (220,672 บาท/30 วัน)
+-- แต่ยอดไม่หาย เพราะ BRANCH_ALIASES ใน lib/parser.ts ยุบ N-BPG เป็น BPG
+-- ตั้งแต่ก่อน lookup ใน branch map จึงไม่ต้องพึ่งแถวนี้อีกต่อไป
+-- (ดู PR #55 — แอดที่ยังใช้รหัสเก่าถูกทำเครื่องหมาย isCanonicalName = false ไว้)
+--
+-- ลบพร้อมกับที่เอาออกจาก data/branch-config.json แล้ว และ BRANCH_MAP
+-- ใน lib/parser.ts ก็ไม่มี N-BPG มาตั้งแต่ PR #55 — ทั้งสองแหล่งที่ seedKindIfEmpty()
+-- ใช้จึงไม่มีรหัสนี้ รหัสนี้จะไม่ถูกใส่กลับมาเอง
+--
+-- idempotent: รันซ้ำได้ ถ้าไม่มีแถวอยู่แล้วก็ไม่มีผลอะไร
+DELETE FROM parser_config WHERE kind = 'branch' AND code = 'N-BPG';

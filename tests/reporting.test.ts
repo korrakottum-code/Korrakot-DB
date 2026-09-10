@@ -93,7 +93,8 @@ test("objective mapping prevents mixing inbox with other objectives", () => {
 test("classification separates Class Go, non-sales, test, and unknown", () => {
   const base = { branch: "Class Go กัง", branchCode: "KKG", isParsed: true } as const;
   assert.equal(classifyDimension(base), "class_go");
-  assert.equal(classifyDimension({ branch: "หน้าบ้าน", branchCode: "HB", isParsed: true }), "special");
+  // หน้าบ้านถูกจัดเป็น special จากชื่อ ไม่ได้ผูกกับรหัสสาขาใดรหัสหนึ่ง
+  assert.equal(classifyDimension({ branch: "หน้าบ้าน", branchCode: "CLS", isParsed: true }), "special");
   assert.equal(classifyDimension({ branch: "ทรัพยากรบุคคล", branchCode: "HR", isParsed: true }), "non_sales");
   assert.equal(classifyDimension(base, { testBranchCodes: new Set(["KKG"]) }), "test");
   assert.equal(classifyDimension({ branch: "ไม่รู้จัก", branchCode: "ZZZ", isParsed: true }, { knownBranchCodes: new Set(["KKC"]) }), "unknown");

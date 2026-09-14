@@ -1,8 +1,8 @@
 {
-  "version": "2026-09-07.v1",
-  "lastUpdated": "2026-09-07",
-  "passThreshold": 85,
-  "sourceNote": "เทียบ Top 39 ครีเอทีฟ (CPI ต่ำสุด) กับ Bottom 40 ครีเอทีฟ (CPI สูงสุด) ที่มีข้อมูลเชื่อถือได้ ในช่วง 2026-08-08 ถึง 2026-09-07 (Top: 28 ภาพนิ่ง, 11 วิดีโอ, ข้าม 1). คะแนนเฉลี่ย Top = 65.2%, Bottom = 64.7%. เกณฑ์ผ่านตั้งที่จุดที่แยกสองกลุ่มได้ดีที่สุด: ภาพนิ่ง 85%, วิดีโอ 50% (ไม่ใช่จุดที่ทำให้ Top ผ่านเยอะสุดแบบเดิม). ข้อที่ต้องดูวิดีโอจริง (requiresVideoPlayback) ไม่ถูกนับคะแนนอัตโนมัติ — แสดงให้ตรวจเองใน UI แทน. ⚠️ ข้อที่แยกแอดดี/แย่ไม่ได้ (Top ทำไม่ต่างจาก Bottom) ควรทบทวน: offer-anchor (Top 51.3% vs Bottom 67.5%), cta-clear (Top 23.1% vs Bottom 30%), offer-clear (Top 71.8% vs Bottom 77.5%), brand-contrast (Top 92.3% vs Bottom 97.5%), hook-price (Top 71.8% vs Bottom 75%), hook-pain (Top 35.9% vs Bottom 37.5%), hook-readable (Top 92.3% vs Bottom 92.5%), tech-ratio (Top 100% vs Bottom 100%), tech-notcut (Top 100% vs Bottom 100%), offer-match (Top 71.8% vs Bottom 70%), brand-tone (Top 87.2% vs Bottom 85%), cta-benefits (Top 20.5% vs Bottom 17.5%), cta-urgency (Top 51.3% vs Bottom 45%), proof-product (Top 53.8% vs Bottom 47.5%). อัปเดตอัตโนมัติทุกสัปดาห์ผ่าน GitHub Actions (scripts/refresh-checklist.ts) — merge ผ่าน Pull Request หลังรีวิว.",
+  "version": "2026-09-14.v1",
+  "lastUpdated": "2026-09-14",
+  "passThreshold": 80,
+  "sourceNote": "เทียบ Top 39 ครีเอทีฟ (CPI ต่ำสุด) กับ Bottom 39 ครีเอทีฟ (CPI สูงสุด) ที่มีข้อมูลเชื่อถือได้ ในช่วง 2026-08-15 ถึง 2026-09-14 (Top: 28 ภาพนิ่ง, 11 วิดีโอ, ข้าม 1). คะแนนเฉลี่ย Top = 66%, Bottom = 66.2%. เกณฑ์ผ่านตั้งที่จุดที่แยกสองกลุ่มได้ดีที่สุด: ภาพนิ่ง 80%, วิดีโอ 60% (ไม่ใช่จุดที่ทำให้ Top ผ่านเยอะสุดแบบเดิม). ข้อที่ต้องดูวิดีโอจริง (requiresVideoPlayback) ไม่ถูกนับคะแนนอัตโนมัติ — แสดงให้ตรวจเองใน UI แทน. ⚠️ ข้อที่แยกแอดดี/แย่ไม่ได้ (Top ทำไม่ต่างจาก Bottom) ควรทบทวน: offer-match (Top 64.1% vs Bottom 76.9%), hook-price (Top 76.9% vs Bottom 87.2%), offer-clear (Top 76.9% vs Bottom 87.2%), cta-benefits (Top 12.8% vs Bottom 20.5%), cta-clear (Top 17.9% vs Bottom 23.1%), proof-product (Top 48.7% vs Bottom 51.3%), cta-urgency (Top 43.6% vs Bottom 43.6%), offer-anchor (Top 59% vs Bottom 59%), brand-tone (Top 87.2% vs Bottom 87.2%), brand-contrast (Top 97.4% vs Bottom 97.4%), tech-ratio (Top 100% vs Bottom 100%), tech-notcut (Top 100% vs Bottom 100%), hook-readable (Top 97.4% vs Bottom 94.9%), hook-pain (Top 38.5% vs Bottom 33.3%). อัปเดตอัตโนมัติทุกสัปดาห์ผ่าน GitHub Actions (scripts/refresh-checklist.ts) — merge ผ่าน Pull Request หลังรีวิว.",
   "categories": [
     {
       "id": "hook",
@@ -32,7 +32,7 @@
         {
           "id": "proof-beforeafter",
           "label": "มีภาพ Before/After หรือ zoom-in จุดปัญหาให้เห็นผลลัพธ์ชัดเจน",
-          "weight": 1
+          "weight": 2
         },
         {
           "id": "proof-product",
@@ -136,7 +136,7 @@
     }
   ],
   "passThresholdByMedia": {
-    "image": 85,
-    "video": 50
+    "image": 80,
+    "video": 60
   }
 }

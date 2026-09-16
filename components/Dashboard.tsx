@@ -67,10 +67,11 @@ function groupBy(insights: AdInsight[], key: TabKey): GroupedRow[] {
     else if (key === "program") name = ins.parsed.program || ins.parsed.programCode || "ไม่ระบุ";
     else if (key === "creative") name = ins.parsed.awCode || "ไม่ระบุ";
 
-    if (!map[name]) map[name] = { name, spend: 0, impressions: 0, inbox: 0, cpi: 0, leads: 0, cpl: 0 };
+    if (!map[name]) map[name] = { name, spend: 0, impressions: 0, inbox: 0, cpi: 0, depth3: 0, pctDepth3: 0, leads: 0, cpl: 0 };
     map[name].spend += ins.spend;
     map[name].impressions += ins.impressions;
     map[name].inbox += ins.inbox;
+    map[name].depth3 += ins.depth3;
     map[name].leads += ins.leads;
   }
 
@@ -78,6 +79,7 @@ function groupBy(insights: AdInsight[], key: TabKey): GroupedRow[] {
     .map((r) => ({
       ...r,
       cpi: r.inbox > 0 ? r.spend / r.inbox : 0,
+      pctDepth3: r.inbox > 0 ? r.depth3 / r.inbox : 0,
       cpl: r.leads > 0 ? r.spend / r.leads : 0,
     }))
     .sort((a, b) => b.spend - a.spend);
@@ -93,11 +95,12 @@ function groupByWithPrev(insights: AdInsight[], prevInsights: AdInsight[], key: 
     else if (key === "creative") name = ins.parsed.awCode || "ไม่ระบุ";
 
     if (!map[name]) {
-      map[name] = { name, spend: 0, impressions: 0, inbox: 0, cpi: 0, leads: 0, cpl: 0, prevSpend: 0, prevImpressions: 0, prevInbox: 0, prevCpi: 0, prevLeads: 0, prevCpl: 0 };
+      map[name] = { name, spend: 0, impressions: 0, inbox: 0, cpi: 0, depth3: 0, pctDepth3: 0, leads: 0, cpl: 0, prevSpend: 0, prevImpressions: 0, prevInbox: 0, prevCpi: 0, prevDepth3: 0, prevPctDepth3: 0, prevLeads: 0, prevCpl: 0 };
     }
     map[name].spend += ins.spend;
     map[name].impressions += ins.impressions;
     map[name].inbox += ins.inbox;
+    map[name].depth3 += ins.depth3;
     map[name].leads += ins.leads;
   }
 
@@ -108,16 +111,18 @@ function groupByWithPrev(insights: AdInsight[], prevInsights: AdInsight[], key: 
     else if (key === "creative") name = ins.parsed.awCode || "ไม่ระบุ";
 
     if (!map[name]) {
-      map[name] = { name, spend: 0, impressions: 0, inbox: 0, cpi: 0, leads: 0, cpl: 0, prevSpend: 0, prevImpressions: 0, prevInbox: 0, prevCpi: 0, prevLeads: 0, prevCpl: 0 };
+      map[name] = { name, spend: 0, impressions: 0, inbox: 0, cpi: 0, depth3: 0, pctDepth3: 0, leads: 0, cpl: 0, prevSpend: 0, prevImpressions: 0, prevInbox: 0, prevCpi: 0, prevDepth3: 0, prevPctDepth3: 0, prevLeads: 0, prevCpl: 0 };
     }
     if (map[name].prevSpend === undefined) map[name].prevSpend = 0;
     if (map[name].prevImpressions === undefined) map[name].prevImpressions = 0;
     if (map[name].prevInbox === undefined) map[name].prevInbox = 0;
+    if (map[name].prevDepth3 === undefined) map[name].prevDepth3 = 0;
     if (map[name].prevLeads === undefined) map[name].prevLeads = 0;
 
     map[name].prevSpend! += ins.spend;
     map[name].prevImpressions! += ins.impressions;
     map[name].prevInbox! += ins.inbox;
+    map[name].prevDepth3! += ins.depth3;
     map[name].prevLeads! += ins.leads;
   }
 
@@ -125,8 +130,10 @@ function groupByWithPrev(insights: AdInsight[], prevInsights: AdInsight[], key: 
     .map((r) => ({
       ...r,
       cpi: r.inbox > 0 ? r.spend / r.inbox : 0,
+      pctDepth3: r.inbox > 0 ? r.depth3 / r.inbox : 0,
       cpl: r.leads > 0 ? r.spend / r.leads : 0,
       prevCpi: (r.prevInbox || 0) > 0 ? (r.prevSpend || 0) / r.prevInbox! : 0,
+      prevPctDepth3: (r.prevInbox || 0) > 0 ? (r.prevDepth3 || 0) / r.prevInbox! : 0,
       prevCpl: (r.prevLeads || 0) > 0 ? (r.prevSpend || 0) / r.prevLeads! : 0,
     }))
     .sort((a, b) => b.spend - a.spend)
@@ -1050,6 +1057,7 @@ export default function Dashboard({ showDepth3 = false }: { showDepth3?: boolean
                 sort={tableSort}
                 onSort={handleTableSort}
                 showComparison={showComparison}
+                showDepth3={showDepth3}
                 onProgramDrill={(name) => {
                   const code = Object.entries(PROGRAM_MAP).find(([, v]) => v === name)?.[0] || "all";
                   setProgramFilter(code);

@@ -10,6 +10,7 @@ interface Props {
   onSort: (col: string) => void;
   onProgramDrill?: (name: string) => void;
   showComparison?: boolean;
+  showDepth3?: boolean;
 }
 
 function fmt(n: number) {
@@ -38,9 +39,11 @@ function renderDiffBadge(current: number, previous?: number, lowerIsBetter = fal
   );
 }
 
-const columns = ["name", "spend", "impressions", "inbox", "cpi", "leads", "cpl"] as const;
+const BASE_COLUMNS = ["name", "spend", "impressions", "inbox", "cpi", "leads", "cpl"] as const;
+const DEPTH3_COLUMNS = ["name", "spend", "impressions", "inbox", "depth3", "pctDepth3", "cpi", "leads", "cpl"] as const;
 
-export default function SortableMetricTable({ rows, tab, sort, onSort, onProgramDrill, showComparison = false }: Props) {
+export default function SortableMetricTable({ rows, tab, sort, onSort, onProgramDrill, showComparison = false, showDepth3 = false }: Props) {
+  const columns = showDepth3 ? DEPTH3_COLUMNS : BASE_COLUMNS;
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs sm:text-sm">
@@ -64,11 +67,15 @@ export default function SortableMetricTable({ rows, tab, sort, onSort, onProgram
                         ? "Impressions"
                         : col === "inbox"
                           ? "Inbox"
-                          : col === "cpi"
-                            ? "CPI"
-                            : col === "leads"
-                              ? "Leads"
-                              : "CPL"}
+                          : col === "depth3"
+                            ? "คุยถึงข้อความ 3"
+                            : col === "pctDepth3"
+                              ? "% คุยต่อ"
+                              : col === "cpi"
+                                ? "CPI"
+                                : col === "leads"
+                                  ? "Leads"
+                                  : "CPL"}
                   {sort.col === col ? (sort.dir === "desc" ? " ↓" : " ↑") : " ↕"}
                 </span>
               </th>
@@ -125,6 +132,31 @@ export default function SortableMetricTable({ rows, tab, sort, onSort, onProgram
                   <div className="text-[10px] text-slate-500">ช่วงก่อน: {fmt(row.prevInbox)}</div>
                 )}
               </td>
+              {/* Depth3 + %Depth3 */}
+              {showDepth3 && (
+                <>
+                  <td className="py-2 px-2 sm:px-3 text-right">
+                    <div className="text-gray-300">
+                      {fmt(row.depth3)}
+                      {showComparison && renderDiffBadge(row.depth3, row.prevDepth3)}
+                    </div>
+                    {showComparison && row.prevDepth3 !== undefined && (
+                      <div className="text-[10px] text-slate-500">ช่วงก่อน: {fmt(row.prevDepth3)}</div>
+                    )}
+                  </td>
+                  <td className="py-2 px-2 sm:px-3 text-right">
+                    <div className="text-gray-300">
+                      {row.inbox > 0 ? `${(row.pctDepth3 * 100).toFixed(0)}%` : "-"}
+                      {showComparison && row.inbox > 0 && row.prevPctDepth3 ? renderDiffBadge(row.pctDepth3, row.prevPctDepth3) : null}
+                    </div>
+                    {showComparison && row.prevPctDepth3 !== undefined && (
+                      <div className="text-[10px] text-slate-500">
+                        ช่วงก่อน: {row.prevInbox && row.prevInbox > 0 ? `${(row.prevPctDepth3 * 100).toFixed(0)}%` : "-"}
+                      </div>
+                    )}
+                  </td>
+                </>
+              )}
               {/* CPI */}
               <td className="py-2 px-2 sm:px-3 text-right">
                 <div className="text-gray-300">

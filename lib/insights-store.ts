@@ -136,6 +136,7 @@ export interface DailyMetricRow {
   clicks: number;
   reach: number;
   inbox: number;
+  depth3: number;
   leads: number;
   /** ชื่อแอด ณ เวลาที่ fetch — ไม่ถูกเก็บลง ad_daily_metrics แต่ใช้อัปเดต ad_name_cache แบบติดสอยห้อยตาม (ไม่ต้องยิง Meta เพิ่ม) */
   adName?: string;
@@ -161,6 +162,7 @@ export interface StoredInsightRow {
   clicks: number;
   reach: number;
   inbox: number;
+  depth3: number;
   leads: number;
 }
 
@@ -229,6 +231,7 @@ export interface DailyAggregate {
   clicks: number;
   reach: number;
   inbox: number;
+  depth3: number;
   leads: number;
 }
 
@@ -237,13 +240,14 @@ export function aggregateByAccountDate(rows: DailyMetricRow[]): Map<string, Dail
   const map = new Map<string, DailyAggregate>();
   for (const row of rows) {
     const key = `${row.accountId}|${row.date}`;
-    const agg = map.get(key) || { rowCount: 0, spend: 0, impressions: 0, clicks: 0, reach: 0, inbox: 0, leads: 0 };
+    const agg = map.get(key) || { rowCount: 0, spend: 0, impressions: 0, clicks: 0, reach: 0, inbox: 0, depth3: 0, leads: 0 };
     agg.rowCount += 1;
     agg.spend += row.spend;
     agg.impressions += row.impressions;
     agg.clicks += row.clicks;
     agg.reach += row.reach;
     agg.inbox += row.inbox;
+    agg.depth3 += row.depth3;
     agg.leads += row.leads;
     map.set(key, agg);
   }
@@ -252,7 +256,7 @@ export function aggregateByAccountDate(rows: DailyMetricRow[]): Map<string, Dail
 
 /** ยอดรวมสองฝั่งต่างกันจริงไหม (ไม่มีข้อมูล = ศูนย์ทั้งชุด, spend เทียบด้วย epsilon กัน float เพี้ยน) */
 export function aggregatesDiffer(a: DailyAggregate | undefined, b: DailyAggregate | undefined): boolean {
-  const zero: DailyAggregate = { rowCount: 0, spend: 0, impressions: 0, clicks: 0, reach: 0, inbox: 0, leads: 0 };
+  const zero: DailyAggregate = { rowCount: 0, spend: 0, impressions: 0, clicks: 0, reach: 0, inbox: 0, depth3: 0, leads: 0 };
   const left = a || zero;
   const right = b || zero;
   return (
@@ -262,6 +266,7 @@ export function aggregatesDiffer(a: DailyAggregate | undefined, b: DailyAggregat
     left.clicks !== right.clicks ||
     left.reach !== right.reach ||
     left.inbox !== right.inbox ||
+    left.depth3 !== right.depth3 ||
     left.leads !== right.leads
   );
 }
@@ -289,7 +294,7 @@ export async function recordSyncChangeStats(
 
   const { rows: storedRows } = await db.query<{
     accountId: string; date: string; rowCount: number;
-    spend: number; impressions: number; clicks: number; reach: number; inbox: number; leads: number;
+    spend: number; impressions: number; clicks: number; reach: number; inbox: number; depth3: number; leads: number;
   }>(
     `select account_id as "accountId", date::text as date, count(*)::int as "rowCount",
             coalesce(sum(spend), 0)::float8 as spend,
@@ -297,6 +302,7 @@ export async function recordSyncChangeStats(
             coalesce(sum(clicks), 0)::float8 as clicks,
             coalesce(sum(reach), 0)::float8 as reach,
             coalesce(sum(inbox), 0)::float8 as inbox,
+            coalesce(sum(depth3), 0)::float8 as depth3,
             coalesce(sum(leads), 0)::float8 as leads
      from ad_daily_metrics
      where account_id = any($1::text[]) and date = any($2::date[])
@@ -306,7 +312,7 @@ export async function recordSyncChangeStats(
   const storedByKey = new Map<string, DailyAggregate>(
     storedRows.map((r) => [`${r.accountId}|${r.date}`, {
       rowCount: r.rowCount, spend: r.spend, impressions: r.impressions,
-      clicks: r.clicks, reach: r.reach, inbox: r.inbox, leads: r.leads,
+      clicks: r.clicks, reach: r.reach, inbox: r.inbox, depth3: r.depth3, leads: r.leads,
     }])
   );
   const fetchedByKey = aggregateByAccountDate(fetchedRows);
@@ -482,17 +488,17 @@ export async function upsertDailyMetrics(rows: DailyMetricRow[]): Promise<void> 
   for (const batch of chunk(rows, UPSERT_BATCH_SIZE)) {
     const values: unknown[] = [];
     const placeholders = batch.map((r, i) => {
-      const base = i * 11;
+      const base = i * 12;
       values.push(
         r.accountId, r.adId, r.date, r.campaignId || null, r.adSetId || null,
-        r.spend, r.impressions, r.clicks, r.reach, r.inbox, r.leads
+        r.spend, r.impressions, r.clicks, r.reach, r.inbox, r.depth3, r.leads
       );
-      const ph = Array.from({ length: 11 }, (_, j) => `$${base + j + 1}`);
+      const ph = Array.from({ length: 12 }, (_, j) => `$${base + j + 1}`);
       return `(${ph.join(",")}, now())`;
     });
     await db.query(
       `insert into ad_daily_metrics
-         (account_id, ad_id, date, campaign_id, ad_set_id, spend, impressions, clicks, reach, inbox, leads, fetched_at)
+         (account_id, ad_id, date, campaign_id, ad_set_id, spend, impressions, clicks, reach, inbox, depth3, leads, fetched_at)
        values ${placeholders.join(",")}
        on conflict (account_id, ad_id, date) do update set
          campaign_id = excluded.campaign_id,
@@ -502,6 +508,7 @@ export async function upsertDailyMetrics(rows: DailyMetricRow[]): Promise<void> 
          clicks = excluded.clicks,
          reach = excluded.reach,
          inbox = excluded.inbox,
+         depth3 = excluded.depth3,
          leads = excluded.leads,
          fetched_at = excluded.fetched_at`,
       values
@@ -562,7 +569,7 @@ export async function readInsightRows(accountIds: string[], since: string, until
        m.date::text as date,
        coalesce(m.campaign_id, n.campaign_id, '') as "campaignId",
        coalesce(m.ad_set_id, n.ad_set_id, '') as "adSetId",
-       m.spend, m.impressions, m.clicks, m.reach, m.inbox, m.leads
+       m.spend, m.impressions, m.clicks, m.reach, m.inbox, m.depth3, m.leads
      from ad_daily_metrics m
      left join ad_name_cache n on n.ad_id = m.ad_id
      where m.account_id = any($1::text[]) and m.date between $2 and $3`,

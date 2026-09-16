@@ -78,6 +78,7 @@ test("fetchDailyMetrics sums Meta's actions into inbox/leads per ad per day", as
           reach: "900",
           actions: [
             { action_type: "onsite_conversion.messaging_conversation_started_7d", value: "3" },
+            { action_type: "onsite_conversion.messaging_user_depth_3_message_send", value: "2" },
             { action_type: "lead", value: "1" },
           ],
         },
@@ -102,6 +103,7 @@ test("fetchDailyMetrics sums Meta's actions into inbox/leads per ad per day", as
       clicks: 10,
       reach: 900,
       inbox: 3,
+      depth3: 2,
       leads: 1,
     },
   ]);

@@ -6,6 +6,8 @@ export interface GroupedRow {
   impressions: number;
   inbox: number;
   cpi: number;
+  depth3: number;
+  pctDepth3: number;
   leads: number;
   cpl: number;
   // Optional comparison (previous period) fields
@@ -13,6 +15,8 @@ export interface GroupedRow {
   prevImpressions?: number;
   prevInbox?: number;
   prevCpi?: number;
+  prevDepth3?: number;
+  prevPctDepth3?: number;
   prevLeads?: number;
   prevCpl?: number;
 }

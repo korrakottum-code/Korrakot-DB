@@ -44,6 +44,7 @@ function toAdInsight(row: Awaited<ReturnType<typeof readInsightRows>>[number], a
     cpm: 0,
     inbox: row.inbox,
     cpi: row.inbox > 0 ? row.spend / row.inbox : 0,
+    depth3: row.depth3,
     leads: row.leads,
     cpl: row.leads > 0 ? row.spend / row.leads : 0,
     date: row.date,

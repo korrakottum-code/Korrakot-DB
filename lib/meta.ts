@@ -59,6 +59,8 @@ export interface AdInsight {
   cpm: number;
   inbox: number;
   cpi: number;
+  /** onsite_conversion.messaging_user_depth_3_message_send — จำนวนคนที่ "ทัก" (inbox) แล้วคุยต่อจนส่งข้อความครบ 3 ครั้งจริง ใช้แยกทักแล้วเงียบ/บอทตอบเองออกจากคนที่คุยจริง */
+  depth3: number;
   leads: number;
   cpl: number;
   date: string;
@@ -140,6 +142,7 @@ async function fetchInsightsForAccount(
     const actions = row.actions as { action_type: string; value: string }[];
     const costs = row.cost_per_action_type as { action_type: string; value: string }[];
     const inbox = getAction(actions, "onsite_conversion.messaging_conversation_started_7d");
+    const depth3 = getAction(actions, "onsite_conversion.messaging_user_depth_3_message_send");
     const leads = getAction(actions, "lead");
     const spend = parseFloat(String(row.spend || "0"));
 
@@ -155,6 +158,7 @@ async function fetchInsightsForAccount(
       cpm: parseFloat(String(row.cpm || "0")),
       inbox,
       cpi: getCost(costs, "onsite_conversion.messaging_conversation_started_7d") || (inbox > 0 ? spend / inbox : 0),
+      depth3,
       leads,
       cpl: getCost(costs, "lead") || (leads > 0 ? spend / leads : 0),
       date: String(row.date_start || ""),
@@ -250,6 +254,7 @@ async function fetchDailyMetricsForAccount(
       clicks: parseInt(String(row.clicks || "0")),
       reach: parseInt(String(row.reach || "0")),
       inbox: getAction(actions, "onsite_conversion.messaging_conversation_started_7d"),
+      depth3: getAction(actions, "onsite_conversion.messaging_user_depth_3_message_send"),
       leads: getAction(actions, "lead"),
     });
   }

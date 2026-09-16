@@ -86,6 +86,7 @@ const metricRow = (accountId: string, date: string, values: Partial<DailyMetricR
   clicks: values.clicks ?? 5,
   reach: values.reach ?? 80,
   inbox: values.inbox ?? 2,
+  depth3: values.depth3 ?? 1,
   leads: values.leads ?? 1,
 });
 
@@ -101,6 +102,7 @@ test("aggregateByAccountDate sums rows per (account, date) pair", () => {
   assert.equal(day1.rowCount, 2);
   assert.equal(day1.spend, 15);
   assert.equal(day1.inbox, 3);
+  assert.equal(day1.depth3, 2);
   assert.equal(map.get("act_2|2026-08-01")!.spend, 3);
 });
 
@@ -146,11 +148,12 @@ test("pickSettlingWindow grows back when the boundary age starts changing again"
 });
 
 test("aggregatesDiffer treats missing side as zeros and tolerates float noise in spend", () => {
-  const base = { rowCount: 1, spend: 10, impressions: 100, clicks: 5, reach: 80, inbox: 2, leads: 1 };
+  const base = { rowCount: 1, spend: 10, impressions: 100, clicks: 5, reach: 80, inbox: 2, depth3: 1, leads: 1 };
   assert.equal(aggregatesDiffer(base, { ...base }), false);
   assert.equal(aggregatesDiffer(base, { ...base, spend: 10.005 }), false);
   assert.equal(aggregatesDiffer(base, { ...base, spend: 10.5 }), true);
   assert.equal(aggregatesDiffer(base, { ...base, inbox: 3 }), true);
+  assert.equal(aggregatesDiffer(base, { ...base, depth3: 2 }), true);
   assert.equal(aggregatesDiffer(base, { ...base, rowCount: 2 }), true);
   assert.equal(aggregatesDiffer(undefined, undefined), false);
   assert.equal(aggregatesDiffer(base, undefined), true);

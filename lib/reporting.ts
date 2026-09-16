@@ -41,12 +41,16 @@ export interface ReportingTotals {
   reach: number;
   clicks: number;
   inbox: number;
+  /** onsite_conversion.messaging_user_depth_3_message_send — จำนวนคนที่ทักมาแล้วคุยต่อจริงถึงข้อความที่ 3 */
+  depth3: number;
   leads: number;
   ctr: number | null;
   cpc: number | null;
   cpm: number | null;
   cpi: number | null;
   cpl: number | null;
+  /** depth3 / inbox — สัดส่วนคนที่ "ทักแล้วคุยต่อ" จริง ไม่ใช่ทักแล้วเงียบหรือบอทตอบเอง */
+  pctDepth3: number | null;
 }
 
 export interface DailyReportingRow extends ReportingTotals {
@@ -230,7 +234,7 @@ function safeRate(numerator: number, denominator: number): number | null {
   return denominator > 0 ? numerator / denominator : null;
 }
 
-export function sumReportingRows(rows: Array<Pick<AdInsight, "spend" | "impressions" | "reach" | "clicks" | "inbox" | "leads">>): ReportingTotals {
+export function sumReportingRows(rows: Array<Pick<AdInsight, "spend" | "impressions" | "reach" | "clicks" | "inbox" | "depth3" | "leads">>): ReportingTotals {
   const totals = rows.reduce(
     (sum, row) => ({
       spend: sum.spend + (Number.isFinite(row.spend) ? row.spend : 0),
@@ -238,9 +242,10 @@ export function sumReportingRows(rows: Array<Pick<AdInsight, "spend" | "impressi
       reach: sum.reach + (Number.isFinite(row.reach) ? row.reach : 0),
       clicks: sum.clicks + (Number.isFinite(row.clicks) ? row.clicks : 0),
       inbox: sum.inbox + (Number.isFinite(row.inbox) ? row.inbox : 0),
+      depth3: sum.depth3 + (Number.isFinite(row.depth3) ? row.depth3 : 0),
       leads: sum.leads + (Number.isFinite(row.leads) ? row.leads : 0),
     }),
-    { spend: 0, impressions: 0, reach: 0, clicks: 0, inbox: 0, leads: 0 }
+    { spend: 0, impressions: 0, reach: 0, clicks: 0, inbox: 0, depth3: 0, leads: 0 }
   );
   return {
     ...totals,
@@ -249,6 +254,7 @@ export function sumReportingRows(rows: Array<Pick<AdInsight, "spend" | "impressi
     cpm: safeRate(totals.spend * 1_000, totals.impressions),
     cpi: safeRate(totals.spend, totals.inbox),
     cpl: safeRate(totals.spend, totals.leads),
+    pctDepth3: safeRate(totals.depth3, totals.inbox),
   };
 }
 

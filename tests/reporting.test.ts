@@ -11,7 +11,7 @@ import {
   sumReportingRows,
 } from "../lib/reporting.ts";
 
-const row = (date: string, values: Partial<{ spend: number; impressions: number; reach: number; clicks: number; inbox: number; leads: number }> = {}) => ({
+const row = (date: string, values: Partial<{ spend: number; impressions: number; reach: number; clicks: number; inbox: number; depth3: number; leads: number }> = {}) => ({
   adName: "KKC PBF0-0454",
   parsed: { branch: "กังสดาล", branchCode: "KKC", isParsed: true } as never,
   spend: values.spend ?? 10,
@@ -19,6 +19,7 @@ const row = (date: string, values: Partial<{ spend: number; impressions: number;
   reach: values.reach ?? 80,
   clicks: values.clicks ?? 10,
   inbox: values.inbox ?? 2,
+  depth3: values.depth3 ?? 1,
   leads: values.leads ?? 1,
   ctr: 10,
   cpc: 1,
@@ -112,9 +113,19 @@ test("confidence and pacing expose low sample and budget status", () => {
 });
 
 test("totals return null for rates with zero denominators", () => {
-  const totals = sumReportingRows([{ spend: 20, impressions: 0, reach: 0, clicks: 0, inbox: 0, leads: 0 }]);
+  const totals = sumReportingRows([{ spend: 20, impressions: 0, reach: 0, clicks: 0, inbox: 0, depth3: 0, leads: 0 }]);
   assert.equal(totals.ctr, null);
   assert.equal(totals.cpc, null);
   assert.equal(totals.cpi, null);
   assert.equal(totals.cpl, null);
+  assert.equal(totals.pctDepth3, null);
+});
+
+test("pctDepth3 measures how many inbox conversations actually reach message 3", () => {
+  const totals = sumReportingRows([
+    row("2026-07-10", { inbox: 10, depth3: 6 }),
+    row("2026-07-10", { inbox: 5, depth3: 1 }),
+  ]);
+  assert.equal(totals.depth3, 7);
+  assert.equal(totals.pctDepth3, 7 / 15);
 });

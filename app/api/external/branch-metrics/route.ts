@@ -134,6 +134,7 @@ export async function GET(req: NextRequest) {
           reach: row.reach,
           clicks: row.clicks,
           inbox: row.inbox,
+          depth3: row.depth3,
           leads: row.leads,
         }));
         return aggregateBranchMetrics(rows, {

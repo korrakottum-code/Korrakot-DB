@@ -10,7 +10,7 @@ const parsed = (branchCode: string, branch: string, isParsed = true) =>
 const row = (
   branchCode: string,
   branch: string,
-  values: Partial<{ spend: number; impressions: number; reach: number; clicks: number; inbox: number; leads: number }> = {},
+  values: Partial<{ spend: number; impressions: number; reach: number; clicks: number; inbox: number; depth3: number; leads: number }> = {},
   isParsed = true
 ) => ({
   parsed: parsed(branchCode, branch, isParsed),
@@ -19,6 +19,7 @@ const row = (
   reach: values.reach ?? 800,
   clicks: values.clicks ?? 50,
   inbox: values.inbox ?? 10,
+  depth3: values.depth3 ?? 5,
   leads: values.leads ?? 4,
 });
 

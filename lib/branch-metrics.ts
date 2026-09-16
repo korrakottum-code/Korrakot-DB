@@ -46,7 +46,7 @@ export interface AggregateOptions {
 
 type InsightForBranch = Pick<
   AdInsight,
-  "parsed" | "spend" | "impressions" | "reach" | "clicks" | "inbox" | "leads"
+  "parsed" | "spend" | "impressions" | "reach" | "clicks" | "inbox" | "depth3" | "leads"
 >;
 
 export function aggregateBranchMetrics(

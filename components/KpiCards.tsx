@@ -1,7 +1,7 @@
 "use client";
 
 import type { AdInsight } from "@/lib/meta";
-import { DollarSign, Eye, MousePointer, TrendingUp } from "lucide-react";
+import { DollarSign, Eye, MessageCircle, MousePointer, TrendingUp } from "lucide-react";
 
 function fmt(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -48,17 +48,21 @@ export default function KpiCards({ insights, prevInsights = [], filterSummary, s
   const totalSpend = insights.reduce((s, i) => s + i.spend, 0);
   const totalImpressions = insights.reduce((s, i) => s + i.impressions, 0);
   const totalInbox = insights.reduce((s, i) => s + i.inbox, 0);
+  const totalDepth3 = insights.reduce((s, i) => s + i.depth3, 0);
   const totalLeads = insights.reduce((s, i) => s + i.leads, 0);
   const avgCPI = totalInbox > 0 ? totalSpend / totalInbox : 0;
   const avgCPL = totalLeads > 0 ? totalSpend / totalLeads : 0;
+  const pctDepth3 = totalInbox > 0 ? (totalDepth3 / totalInbox) * 100 : 0;
 
   // Previous period metrics
   const prevTotalSpend = prevInsights.reduce((s, i) => s + i.spend, 0);
   const prevTotalImpressions = prevInsights.reduce((s, i) => s + i.impressions, 0);
   const prevTotalInbox = prevInsights.reduce((s, i) => s + i.inbox, 0);
+  const prevTotalDepth3 = prevInsights.reduce((s, i) => s + i.depth3, 0);
   const prevTotalLeads = prevInsights.reduce((s, i) => s + i.leads, 0);
   const prevAvgCPI = prevTotalInbox > 0 ? prevTotalSpend / prevTotalInbox : 0;
   const prevAvgCPL = prevTotalLeads > 0 ? prevTotalSpend / prevTotalLeads : 0;
+  const prevPctDepth3 = prevTotalInbox > 0 ? (prevTotalDepth3 / prevTotalInbox) * 100 : 0;
 
   const cards = [
     { 
@@ -88,9 +92,27 @@ export default function KpiCards({ insights, prevInsights = [], filterSummary, s
       tint: "bg-purple-500/15",
       change: renderChangeIndicator(totalInbox, prevTotalInbox)
     },
-    { 
-      label: "CPI", 
-      value: totalInbox > 0 ? `฿${avgCPI.toFixed(0)}` : "-", 
+    {
+      label: "คุยถึงข้อความ 3",
+      value: fmt(totalDepth3),
+      prevValue: fmt(prevTotalDepth3),
+      icon: MessageCircle,
+      color: "text-indigo-400",
+      tint: "bg-indigo-500/15",
+      change: renderChangeIndicator(totalDepth3, prevTotalDepth3)
+    },
+    {
+      label: "% คุยต่อ (Depth3)",
+      value: totalInbox > 0 ? `${pctDepth3.toFixed(0)}%` : "-",
+      prevValue: prevTotalInbox > 0 ? `${prevPctDepth3.toFixed(0)}%` : "-",
+      icon: MessageCircle,
+      color: "text-teal-400",
+      tint: "bg-teal-500/15",
+      change: renderChangeIndicator(pctDepth3, prevPctDepth3)
+    },
+    {
+      label: "CPI",
+      value: totalInbox > 0 ? `฿${avgCPI.toFixed(0)}` : "-",
       prevValue: prevTotalInbox > 0 ? `฿${prevAvgCPI.toFixed(0)}` : "-",
       icon: TrendingUp, 
       color: "text-amber-400", 
@@ -129,7 +151,7 @@ export default function KpiCards({ insights, prevInsights = [], filterSummary, s
           </div>
         </div>
       )}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3 md:gap-4">
         {cards.map((card) => (
           <div
             key={card.label}

@@ -42,9 +42,11 @@ interface Props {
   prevInsights?: AdInsight[];
   filterSummary?: string;
   showComparison?: boolean;
+  /** การ์ด "คุยถึงข้อความ 3" / "% คุยต่อ (Depth3)" — ยังไม่ปล่อยหน้าปกติ เปิดเฉพาะ /v2 (ดู app/v2/page.tsx) */
+  showDepth3?: boolean;
 }
 
-export default function KpiCards({ insights, prevInsights = [], filterSummary, showComparison = false }: Props) {
+export default function KpiCards({ insights, prevInsights = [], filterSummary, showComparison = false, showDepth3 = false }: Props) {
   const totalSpend = insights.reduce((s, i) => s + i.spend, 0);
   const totalImpressions = insights.reduce((s, i) => s + i.impressions, 0);
   const totalInbox = insights.reduce((s, i) => s + i.inbox, 0);
@@ -92,24 +94,26 @@ export default function KpiCards({ insights, prevInsights = [], filterSummary, s
       tint: "bg-purple-500/15",
       change: renderChangeIndicator(totalInbox, prevTotalInbox)
     },
-    {
-      label: "คุยถึงข้อความ 3",
-      value: fmt(totalDepth3),
-      prevValue: fmt(prevTotalDepth3),
-      icon: MessageCircle,
-      color: "text-indigo-400",
-      tint: "bg-indigo-500/15",
-      change: renderChangeIndicator(totalDepth3, prevTotalDepth3)
-    },
-    {
-      label: "% คุยต่อ (Depth3)",
-      value: totalInbox > 0 ? `${pctDepth3.toFixed(0)}%` : "-",
-      prevValue: prevTotalInbox > 0 ? `${prevPctDepth3.toFixed(0)}%` : "-",
-      icon: MessageCircle,
-      color: "text-teal-400",
-      tint: "bg-teal-500/15",
-      change: renderChangeIndicator(pctDepth3, prevPctDepth3)
-    },
+    ...(showDepth3 ? [
+      {
+        label: "คุยถึงข้อความ 3",
+        value: fmt(totalDepth3),
+        prevValue: fmt(prevTotalDepth3),
+        icon: MessageCircle,
+        color: "text-indigo-400",
+        tint: "bg-indigo-500/15",
+        change: renderChangeIndicator(totalDepth3, prevTotalDepth3)
+      },
+      {
+        label: "% คุยต่อ (Depth3)",
+        value: totalInbox > 0 ? `${pctDepth3.toFixed(0)}%` : "-",
+        prevValue: prevTotalInbox > 0 ? `${prevPctDepth3.toFixed(0)}%` : "-",
+        icon: MessageCircle,
+        color: "text-teal-400",
+        tint: "bg-teal-500/15",
+        change: renderChangeIndicator(pctDepth3, prevPctDepth3)
+      },
+    ] : []),
     {
       label: "CPI",
       value: totalInbox > 0 ? `฿${avgCPI.toFixed(0)}` : "-",
@@ -151,7 +155,7 @@ export default function KpiCards({ insights, prevInsights = [], filterSummary, s
           </div>
         </div>
       )}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3 md:gap-4">
+      <div className={`grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4 ${showDepth3 ? "md:grid-cols-4 lg:grid-cols-8" : "md:grid-cols-6"}`}>
         {cards.map((card) => (
           <div
             key={card.label}

@@ -142,7 +142,7 @@ function fmtB(n: number) {
   return `฿${n.toFixed(0)}`;
 }
 
-export default function Dashboard() {
+export default function Dashboard({ showDepth3 = false }: { showDepth3?: boolean } = {}) {
   const [insights, setInsights] = useState<AdInsight[]>([]);
   const [prevInsights, setPrevInsights] = useState<AdInsight[]>([]);
   const [loading, setLoading] = useState(false);
@@ -878,6 +878,7 @@ export default function Dashboard() {
           insights={filteredInsights}
           prevInsights={filteredPrevInsights}
           showComparison={showComparison}
+          showDepth3={showDepth3}
           filterSummary={
             [
               adCodeFilter ? `Code: "${adCodeFilter}"` : "",

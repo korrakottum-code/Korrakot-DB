@@ -580,7 +580,12 @@ export default function Dashboard({ showDepth3 = false }: { showDepth3?: boolean
               {DATE_PRESETS.map((d) => (
                 <button
                   key={d.value}
-                  onClick={() => setDatePreset(d.value)}
+                  onClick={() => {
+                    setDatePreset(d.value);
+                    // เคลียร์ช่วงกำหนดเองทิ้ง ไม่งั้นปุ่ม DateRangePicker จะค้างโชว์วันที่เดิมทั้งที่สลับมาใช้ preset แล้ว
+                    setCustomSince("");
+                    setCustomUntil("");
+                  }}
                   className={`px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                     datePreset === d.value && datePreset !== "custom"
                       ? "bg-indigo-600 text-white"

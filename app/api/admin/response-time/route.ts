@@ -45,6 +45,15 @@ export async function GET(req: NextRequest) {
       forceRefresh
     );
     const pages = statsForDay(cached.value, date);
+    // DEBUG: ชั่วคราวเพื่อไล่บั๊กตัวเลขไม่ตรงระหว่าง local/production — ลบทิ้งหลังหาสาเหตุเจอ
+    console.log("[admin-response-time-debug]", JSON.stringify({
+      requestedDate: date,
+      serverNow: new Date().toISOString(),
+      cacheHit: cached.hit,
+      cacheFetchedAt: cached.fetchedAt,
+      rawPageCount: cached.value.length,
+      rawConvSample: cached.value.find((r) => r.name.includes("ลาดกระบัง"))?.conversations.length,
+    }));
     return NextResponse.json({
       date,
       pages,

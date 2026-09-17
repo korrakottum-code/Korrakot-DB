@@ -94,6 +94,17 @@ export interface PancakeConversation {
   recent_seen_users?: Array<{ seen_at: string }>;
 }
 
+/**
+ * Pancake ส่ง timestamp มาแบบ "naive" (ไม่มี Z/offset ต่อท้าย เช่น "2026-09-17T03:53:00")
+ * แต่ค่าจริงคือเวลา Bangkok local อยู่แล้ว — `new Date(iso)` เฉยๆ จะตีความตาม system timezone
+ * ของเครื่องที่รันโค้ด: เครื่อง dev ที่ตั้งเวลาไทยไว้จะได้ผลถูกโดยบังเอิญ แต่ serverless ของ Vercel
+ * default เป็น UTC ทำให้ทุก timestamp เพี้ยนไป 7 ชั่วโมง (พังทั้งการกรองวันและคำนวณ gap เป็นทอดๆ)
+ * ต้องบังคับตีความเป็น Bangkok เสมอไม่ว่าจะรันที่ไหน
+ */
+function parsePancakeTime(iso: string): number {
+  return fromZonedTime(iso, PANCAKE_TZ).getTime();
+}
+
 /** ตัด outlier เกิน 3 วัน (บทสนทนาเก่าที่เพิ่งมีคนเปิดดู ไม่ใช่ตอบช้าจริง) */
 export const MAX_GAP_MINUTES = 60 * 24 * 3;
 
@@ -105,7 +116,7 @@ export function computeStats(
 ): PageResponseStats {
   const inDay = (iso: string) => {
     if (!dayRangeMs) return true;
-    const t = new Date(iso).getTime();
+    const t = parsePancakeTime(iso);
     return t >= dayRangeMs.sinceMs && t < dayRangeMs.untilMs;
   };
 
@@ -117,13 +128,13 @@ export function computeStats(
   for (const c of conversations) {
     const lastCustomer = c.last_customer_interactive_at;
     if (!lastCustomer) continue;
-    const lastCustomerMs = new Date(lastCustomer).getTime();
+    const lastCustomerMs = parsePancakeTime(lastCustomer);
     oldest = oldest === null ? lastCustomerMs : Math.min(oldest, lastCustomerMs);
     if (!inDay(lastCustomer)) continue;
 
     withCustomerMsg++;
     const seenAfter = (c.recent_seen_users || [])
-      .map((u) => new Date(u.seen_at).getTime())
+      .map((u) => parsePancakeTime(u.seen_at))
       .filter((t) => t >= lastCustomerMs);
     if (seenAfter.length === 0) {
       noStaffSeenYet++;

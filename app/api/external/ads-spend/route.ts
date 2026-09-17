@@ -5,7 +5,7 @@ import { validateExternalDateRangeQuery } from "@/lib/request-validation";
 import { fetchAccounts } from "@/lib/meta";
 import { dedupeAccounts, dedupeInsights } from "@/lib/dedupe";
 import { deleteServerCache, getServerCache } from "@/lib/server-cache";
-import { getEffectiveSettlingWindow, logSyncError, readInsightRows, recentWindowState, splitDateRange } from "@/lib/insights-store";
+import { enumerateDates, getEffectiveSettlingWindow, logSyncError, readInsightRows, recentWindowState, splitDateRange, StoredInsightRow } from "@/lib/insights-store";
 import { syncRange } from "@/lib/insights-sync";
 import { sumReportingRows } from "@/lib/reporting";
 
@@ -13,9 +13,11 @@ import { sumReportingRows } from "@/lib/reporting";
  * API สำหรับระบบภายนอก (เช่น Qlass) ดึงยอดใช้จ่ายโฆษณารวมทุกบัญชี ไปคำนวณ CPO เอง
  * — คนละ auth กับหน้าเว็บภายใน ดู lib/external-auth.ts
  *
- * GET /api/external/ads-spend?since=2026-08-01&until=2026-08-31
+ * GET /api/external/ads-spend?since=2026-08-01&until=2026-08-31[&groupBy=day]
  * Header: Authorization: Bearer <EXTERNAL_API_KEY>
- * → { since, until, spend, currency: "THB", asOf }
+ * → { since, until, spend, currency: "THB", asOf, daily? }
+ * `daily` ปรากฏเฉพาะเมื่อขอ groupBy=day และช่วงไม่เกิน MAX_DAILY_BREAKDOWN_DAYS วัน
+ * (เกินนั้นตอบ 200 ตามปกติแต่ daily: null — ไม่ 400 ทั้ง request)
  *
  * ความสด: เสิร์ฟจาก Postgres เสมอ แล้ว sync กับ Meta เบื้องหลังไม่เกินชั่วโมงละครั้ง
  * (คนละรอบกับหน้าเว็บภายในที่ใช้ 10 นาที — Qlass ขอแค่ "ทุกชั่วโมงก็พอ" เอง
@@ -32,6 +34,22 @@ const CACHE_STALE_TTL_MS = 6 * HOUR_MS;
 const RECENT_SYNC_MAX_AGE_MS = HOUR_MS;
 const ACCOUNTS_CACHE_TTL_MS = 10 * 60 * 1000;
 const ACCOUNTS_STALE_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_DAILY_BREAKDOWN_DAYS = 100;
+
+interface AdsSpendResult {
+  spend: number;
+  daily: Array<{ day: string; spend: number }> | null;
+}
+
+function buildDailyBreakdown(rows: StoredInsightRow[], since: string, until: string): Array<{ day: string; spend: number }> | null {
+  const days = enumerateDates(since, until);
+  if (days.length > MAX_DAILY_BREAKDOWN_DAYS) return null;
+  const byDay = new Map<string, StoredInsightRow[]>(days.map((day) => [day, []]));
+  for (const row of rows) {
+    byDay.get(row.date)?.push(row);
+  }
+  return days.map((day) => ({ day, spend: Math.round(sumReportingRows(byDay.get(day) ?? []).spend) }));
+}
 
 export async function GET(req: NextRequest) {
   const denied = requireExternalApiAuth(req);
@@ -49,7 +67,7 @@ export async function GET(req: NextRequest) {
   if (!validation.ok) {
     return NextResponse.json({ error: validation.error }, { status: 400 });
   }
-  const { since, until } = validation.value;
+  const { since, until, groupBy } = validation.value;
 
   const tokens = [
     process.env.META_ACCESS_TOKEN,
@@ -78,7 +96,7 @@ export async function GET(req: NextRequest) {
     const recentState = await recentWindowState(accountIds, recentDates, RECENT_SYNC_MAX_AGE_MS);
     const deferSync = recentState.covered && !recentState.fresh;
 
-    const cacheKey = `external-ads-spend:${since}:${until}`;
+    const cacheKey = `external-ads-spend:${since}:${until}:${groupBy ?? "total"}`;
 
     if (deferSync) {
       after(async () => {
@@ -93,25 +111,30 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const cached = await getServerCache(cacheKey, CACHE_TTL_MS, async () => {
+    const cached = await getServerCache<AdsSpendResult>(cacheKey, CACHE_TTL_MS, async () => {
       // final ที่ขาด + recent ตามโหมดที่ตัดสินไว้ข้างบน (ปกติทั้งคู่เป็น no-op)
       await Promise.all(
         tokens.map((token) => syncRange(token, accountIds, since, until, asOf, { skipRecent: deferSync, settlingWindowDays }))
       );
       const rows = dedupeInsights(await readInsightRows(accountIds, since, until));
-      return sumReportingRows(rows);
+      return {
+        spend: sumReportingRows(rows).spend,
+        daily: groupBy === "day" ? buildDailyBreakdown(rows, since, until) : null,
+      };
     }, false, { staleTtlMs: CACHE_STALE_TTL_MS });
 
-    return NextResponse.json(
-      {
-        since,
-        until,
-        spend: Math.round(cached.value.spend),
-        currency: "THB",
-        asOf: asOf.toISOString(),
-      },
-      { headers: { "Cache-Control": "private, no-store" } }
-    );
+    const body: Record<string, unknown> = {
+      since,
+      until,
+      spend: Math.round(cached.value.spend),
+      currency: "THB",
+      asOf: asOf.toISOString(),
+    };
+    if (groupBy === "day") {
+      body.daily = cached.value.daily;
+    }
+
+    return NextResponse.json(body, { headers: { "Cache-Control": "private, no-store" } });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     await logSyncError(`external-ads-spend ${since}..${until}`, message);

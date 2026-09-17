@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { computeStats, MAX_GAP_MINUTES, type PancakeConversation } from "../lib/pancake.ts";
+import { computeStats, bangkokDayRangeMs, MAX_GAP_MINUTES, type PancakeConversation } from "../lib/pancake.ts";
 
+// Pancake ส่ง timestamp แบบ naive ไม่มี Z/offset ต่อท้าย (เช่น "2026-09-17T03:53:00") แต่ค่าจริงคือ
+// เวลา Bangkok local — fixture ทุกตัวในไฟล์นี้จึงตั้งใจไม่ใส่ Z ให้ตรงกับข้อมูลจริงที่ API ส่งมา
 const conv = (lastCustomer: string, seenAts: string[] = []): PancakeConversation => ({
   last_customer_interactive_at: lastCustomer,
   recent_seen_users: seenAts.map((seen_at) => ({ seen_at })),
@@ -17,8 +19,8 @@ test("computeStats ignores conversations with no customer message", () => {
 
 test("computeStats counts conversations never seen by staff", () => {
   const stats = computeStats("p1", "Test Page", [
-    conv("2026-09-16T10:00:00Z"),
-    conv("2026-09-16T10:00:00Z", []),
+    conv("2026-09-16T10:00:00"),
+    conv("2026-09-16T10:00:00", []),
   ]);
   assert.equal(stats.withCustomerMsg, 2);
   assert.equal(stats.noStaffSeenYet, 2);
@@ -28,9 +30,9 @@ test("computeStats counts conversations never seen by staff", () => {
 test("computeStats computes the gap between last customer message and earliest staff view after it", () => {
   const stats = computeStats("p1", "Test Page", [
     // ลูกค้าทัก 10:00 แอดมินเห็น 10:05 → ห่าง 5 นาที
-    conv("2026-09-16T10:00:00Z", ["2026-09-16T10:05:00Z"]),
+    conv("2026-09-16T10:00:00", ["2026-09-16T10:05:00"]),
     // แอดมินหลายคนเห็น เอาคนที่เห็นเร็วสุด (หลังลูกค้าทัก) มาคิด
-    conv("2026-09-16T10:00:00Z", ["2026-09-16T10:20:00Z", "2026-09-16T10:10:00Z"]),
+    conv("2026-09-16T10:00:00", ["2026-09-16T10:20:00", "2026-09-16T10:10:00"]),
   ]);
   assert.equal(stats.sampleWithGap, 2);
   // sorted [5, 10] — implementation takes the upper-middle element (index length/2), not the true statistical median
@@ -41,19 +43,19 @@ test("computeStats computes the gap between last customer message and earliest s
 test("computeStats drops a seen_at that happened before the customer's message", () => {
   const stats = computeStats("p1", "Test Page", [
     // แอดมินเคยเห็นบทสนทนานี้ตอน 09:00 (ก่อนลูกค้าทักข้อความล่าสุดตอน 10:00) — ไม่นับเป็นการตอบ
-    conv("2026-09-16T10:00:00Z", ["2026-09-16T09:00:00Z"]),
+    conv("2026-09-16T10:00:00", ["2026-09-16T09:00:00"]),
   ]);
   assert.equal(stats.noStaffSeenYet, 1);
   assert.equal(stats.sampleWithGap, 0);
 });
 
 test("computeStats excludes gaps beyond MAX_GAP_MINUTES as stale re-opens, not slow replies", () => {
-  const justUnder = new Date(0).toISOString();
-  const seenAt = new Date(MAX_GAP_MINUTES * 60_000 - 60_000).toISOString();
-  const seenAtOver = new Date(MAX_GAP_MINUTES * 60_000 + 60_000).toISOString();
+  const gapMs = MAX_GAP_MINUTES * 60_000;
+  const base = new Date(Date.UTC(2026, 0, 1)); // จุดอ้างอิงล้วนๆ ไม่เกี่ยวกับ Bangkok — แค่ทดสอบเพดาน gap
+  const asNaive = (d: Date) => d.toISOString().slice(0, 19);
   const stats = computeStats("p1", "Test Page", [
-    conv(justUnder, [seenAt]),
-    conv(justUnder, [seenAtOver]),
+    conv(asNaive(base), [asNaive(new Date(base.getTime() + gapMs - 60_000))]),
+    conv(asNaive(base), [asNaive(new Date(base.getTime() + gapMs + 60_000))]),
   ]);
   assert.equal(stats.sampleWithGap, 1);
   assert.equal(stats.noStaffSeenYet, 0); // ถูกดูจริง แค่ไม่นับใน gap เพราะเกินเพดาน
@@ -61,10 +63,36 @@ test("computeStats excludes gaps beyond MAX_GAP_MINUTES as stale re-opens, not s
 
 test("computeStats rounds median/avg to 1 decimal place", () => {
   const stats = computeStats("p1", "Test Page", [
-    conv("2026-09-16T10:00:00Z", ["2026-09-16T10:01:00Z"]), // 1 min
-    conv("2026-09-16T10:00:00Z", ["2026-09-16T10:02:00Z"]), // 2 min
-    conv("2026-09-16T10:00:00Z", ["2026-09-16T10:04:00Z"]), // 4 min
+    conv("2026-09-16T10:00:00", ["2026-09-16T10:01:00"]), // 1 min
+    conv("2026-09-16T10:00:00", ["2026-09-16T10:02:00"]), // 2 min
+    conv("2026-09-16T10:00:00", ["2026-09-16T10:04:00"]), // 4 min
   ]);
   assert.equal(stats.medianMinutes, 2);
   assert.equal(stats.avgMinutes, 2.3); // (1+2+4)/3 = 2.333...
+});
+
+// กันบั๊กที่เจอจริงบน production: new Date(naiveString) ตีความตาม system timezone ของเครื่องที่รันโค้ด
+// (dev machine ตั้งเป็นไทยพอดีเลยดูถูกโดยบังเอิญ, Vercel serverless default UTC ทำให้เพี้ยนไป 7 ชม.)
+// ต้องบังคับตีความเป็น Bangkok เสมอไม่ว่า process จะรันด้วย system timezone ไหน
+test("computeStats treats naive Pancake timestamps as Bangkok time, not the process's system timezone", () => {
+  const dayRange = bangkokDayRangeMs("2026-09-17");
+  const stats = computeStats(
+    "p1",
+    "Test Page",
+    [
+      // 23:30 คืนวันที่ 16 (Bangkok) — ยังเป็นเมื่อวาน ต้องไม่นับเข้าวันที่ 17
+      conv("2026-09-16T23:30:00", ["2026-09-16T23:35:00"]),
+      // 00:30 เช้าวันที่ 17 (Bangkok) — เข้าเกณฑ์วันที่ 17 แล้ว
+      conv("2026-09-17T00:30:00", ["2026-09-17T00:40:00"]),
+    ],
+    dayRange
+  );
+  assert.equal(stats.withCustomerMsg, 1, "ต้องนับแค่บทสนทนาของวันที่ 17 เท่านั้น ไม่ปนเมื่อคืนวันที่ 16");
+  assert.equal(stats.medianMinutes, 10);
+});
+
+test("bangkokDayRangeMs is independent of the process's system timezone (Bangkok is UTC+7 always, no DST)", () => {
+  const { sinceMs, untilMs } = bangkokDayRangeMs("2026-09-17");
+  assert.equal(new Date(sinceMs).toISOString(), "2026-09-16T17:00:00.000Z");
+  assert.equal(new Date(untilMs).toISOString(), "2026-09-17T17:00:00.000Z");
 });

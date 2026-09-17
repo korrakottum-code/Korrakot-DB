@@ -33,6 +33,21 @@ function medianColor(v: number | null) {
 
 const TODAY = todayBangkokDateStr();
 
+/** เลื่อนวันที่ (YYYY-MM-DD) ไป N วัน — คำนวณเป็นวันปฏิทินล้วนๆ ไม่ต้องยุ่งกับ timezone instant เพราะ TODAY มาจาก Bangkok อยู่แล้ว */
+function shiftDateStr(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const shifted = new Date(Date.UTC(y, m - 1, d + days));
+  return shifted.toISOString().slice(0, 10);
+}
+
+const QUICK_PRESETS = [
+  { label: "วันนี้", offset: 0 },
+  { label: "เมื่อวาน", offset: -1 },
+  { label: "2 วันก่อน", offset: -2 },
+  { label: "3 วันก่อน", offset: -3 },
+  { label: "7 วันก่อน", offset: -7 },
+];
+
 export default function AdminResponseTimePage() {
   const [date, setDate] = useState(TODAY);
   const [pages, setPages] = useState<PageStat[]>([]);
@@ -80,22 +95,7 @@ export default function AdminResponseTimePage() {
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {date !== TODAY && (
-              <button
-                onClick={() => setDate(TODAY)}
-                className="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs sm:text-sm font-medium transition-colors"
-              >
-                วันนี้
-              </button>
-            )}
-            <input
-              type="date"
-              value={date}
-              max={TODAY}
-              onChange={(e) => e.target.value && setDate(e.target.value)}
-              className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-xs sm:text-sm text-gray-200 [color-scheme:dark]"
-            />
+          <div className="flex items-center gap-2">
             <button
               onClick={() => load(date, true)}
               disabled={loading}
@@ -106,6 +106,32 @@ export default function AdminResponseTimePage() {
             </button>
             <LogoutButton />
           </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap mb-3">
+          <div className="flex gap-1 bg-gray-800 rounded-lg p-1 overflow-x-auto">
+            {QUICK_PRESETS.map((p) => {
+              const value = shiftDateStr(TODAY, p.offset);
+              return (
+                <button
+                  key={p.label}
+                  onClick={() => setDate(value)}
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
+                    date === value ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+          <input
+            type="date"
+            value={date}
+            max={TODAY}
+            onChange={(e) => e.target.value && setDate(e.target.value)}
+            className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-xs sm:text-sm text-gray-200 [color-scheme:dark]"
+          />
         </div>
 
         {error && (

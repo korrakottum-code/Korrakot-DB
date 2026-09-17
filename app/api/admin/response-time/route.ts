@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireInternalApiAuth } from "@/lib/api-auth";
 import { consumeApiRateLimit } from "@/lib/rate-limit";
 import { getServerCache } from "@/lib/server-cache";
-import { fetchAllPagesConversations, statsForDay, todayBangkokDateStr } from "@/lib/pancake";
+import { fetchAllPagesConversations, statsForDay, todayBangkokDateStr, bangkokDayRangeMs } from "@/lib/pancake";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,13 +46,27 @@ export async function GET(req: NextRequest) {
     );
     const pages = statsForDay(cached.value, date);
     // DEBUG: ชั่วคราวเพื่อไล่บั๊กตัวเลขไม่ตรงระหว่าง local/production — ลบทิ้งหลังหาสาเหตุเจอ
+    const target = cached.value.find((r) => r.name.includes("ลาดกระบัง"));
+    const dayRange = bangkokDayRangeMs(date);
+    const targetTimes = (target?.conversations || [])
+      .map((c) => c.last_customer_interactive_at)
+      .filter(Boolean) as string[];
     console.log("[admin-response-time-debug]", JSON.stringify({
       requestedDate: date,
       serverNow: new Date().toISOString(),
+      dayRangeSince: new Date(dayRange.sinceMs).toISOString(),
+      dayRangeUntil: new Date(dayRange.untilMs).toISOString(),
       cacheHit: cached.hit,
       cacheFetchedAt: cached.fetchedAt,
-      rawPageCount: cached.value.length,
-      rawConvSample: cached.value.find((r) => r.name.includes("ลาดกระบัง"))?.conversations.length,
+      allPageNamesMatchingLadkrabang: cached.value.filter((r) => r.name.includes("ลาดกระบัง")).map((r) => r.pageId + ":" + r.name),
+      targetPageId: target?.pageId,
+      targetRawCount: targetTimes.length,
+      targetInDayCount: targetTimes.filter((t) => {
+        const ms = new Date(t).getTime();
+        return ms >= dayRange.sinceMs && ms < dayRange.untilMs;
+      }).length,
+      targetMinTime: targetTimes.length ? targetTimes.reduce((a, b) => (a < b ? a : b)) : null,
+      targetMaxTime: targetTimes.length ? targetTimes.reduce((a, b) => (a > b ? a : b)) : null,
     }));
     return NextResponse.json({
       date,

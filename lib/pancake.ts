@@ -95,6 +95,7 @@ export async function fetchClassClinicPages(token: string): Promise<PancakePage[
 }
 
 export interface PancakeConversation {
+  id?: string;
   last_customer_interactive_at?: string;
   recent_seen_users?: Array<{ seen_at: string; fb_id?: string; fb_name?: string }>;
 }
@@ -236,11 +237,56 @@ export function statsByAdminForDay(raw: RawPageConversations[], dateStr: string)
   return statsByAdminForDateRange(raw, dateStr, dateStr);
 }
 
-interface RawPageConversations {
+export interface RawPageConversations {
   pageId: string;
   name: string;
   conversations: PancakeConversation[];
   error?: string;
+}
+
+export interface ResponseEvent {
+  conversationId: string;
+  pageId: string;
+  pageName: string;
+  adminId: string;
+  adminName: string;
+  gapMinutes: number;
+  /** UTC instant จริง (แปลงถูกแล้ว) ไม่ใช่ string ดิบจาก Pancake */
+  customerMessageAt: string;
+  respondedAt: string;
+}
+
+/**
+ * แตกบทสนทนาที่ "ตอบแล้ว" ของเพจหนึ่งเป็นเหตุการณ์รายบทสนทนา (ไม่กรองวันที่ ไม่ aggregate) —
+ * ใช้เก็บลง DB แบบถาวร (pancake_response_events) เพราะ Pancake ให้แค่ "บทสนทนาล่าสุด N รายการ"
+ * ถ้าไม่บันทึกตอนที่ยังอยู่ในหน้าต่างนั้น ข้อมูลจะหายไปเรื่อยๆ ตามรอบ sync ถัดไป
+ */
+export function extractResponseEvents(pageId: string, pageName: string, conversations: PancakeConversation[]): ResponseEvent[] {
+  const events: ResponseEvent[] = [];
+  for (const c of conversations) {
+    if (!c.id || !c.last_customer_interactive_at) continue;
+    const lastCustomerMs = parsePancakeTime(c.last_customer_interactive_at);
+    const seenAfter = (c.recent_seen_users || [])
+      .map((u) => ({ ms: parsePancakeTime(u.seen_at), id: u.fb_id || "", name: u.fb_name || "ไม่ทราบชื่อ" }))
+      .filter((u) => u.ms >= lastCustomerMs);
+    if (seenAfter.length === 0) continue; // ยังไม่มีคนตอบ — ไม่เก็บ (จะเก็บตอนรอบ sync ถัดไปที่ตอบแล้ว)
+
+    const first = seenAfter.reduce((a, b) => (a.ms < b.ms ? a : b));
+    const gapMin = (first.ms - lastCustomerMs) / 60_000;
+    if (gapMin < 0 || gapMin >= MAX_GAP_MINUTES) continue;
+
+    events.push({
+      conversationId: c.id,
+      pageId,
+      pageName,
+      adminId: first.id || first.name,
+      adminName: first.name,
+      gapMinutes: Math.round(gapMin * 10) / 10,
+      customerMessageAt: new Date(lastCustomerMs).toISOString(),
+      respondedAt: new Date(first.ms).toISOString(),
+    });
+  }
+  return events;
 }
 
 async function fetchPageConversations(page: PancakePage, token: string): Promise<RawPageConversations> {

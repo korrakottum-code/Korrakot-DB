@@ -10,6 +10,9 @@ const PUBLIC_PATHS = new Set(["/login", "/api/auth/login", "/api/auth/logout"]);
 // เส้นทางที่มีระบบยืนยันตัวตนของตัวเอง (Bearer key ไม่ใช่ session คุกกี้ทีมงาน) —
 // ให้ผ่าน middleware นี้ไปตรวจสิทธิ์ในตัว route เอง ดู lib/external-auth.ts
 const EXTERNAL_API_PREFIX = "/api/external/";
+// Vercel Cron เรียกด้วย Authorization: Bearer $CRON_SECRET ไม่มี session คุกกี้ทีมงาน —
+// ตรวจสิทธิ์ในตัว route เอง (ดู app/api/cron/*/route.ts)
+const CRON_API_PREFIX = "/api/cron/";
 
 function noStore(response: NextResponse): NextResponse {
   response.headers.set("Cache-Control", "private, no-store");
@@ -23,7 +26,13 @@ function apiError(message: string, status: number): NextResponse {
 
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-  if (PUBLIC_PATHS.has(pathname) || pathname.startsWith(EXTERNAL_API_PREFIX)) return noStore(NextResponse.next());
+  if (
+    PUBLIC_PATHS.has(pathname) ||
+    pathname.startsWith(EXTERNAL_API_PREFIX) ||
+    pathname.startsWith(CRON_API_PREFIX)
+  ) {
+    return noStore(NextResponse.next());
+  }
 
   const auth = readInternalAuthConfig();
   if (!auth.ok) {

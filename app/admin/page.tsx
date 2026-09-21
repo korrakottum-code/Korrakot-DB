@@ -1,22 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, MessageCircle } from "lucide-react";
+import { RefreshCw, MessageCircle, Download, DatabaseZap } from "lucide-react";
 import LogoutButton from "@/components/LogoutButton";
 import { todayBangkokDateStr } from "@/lib/pancake";
+import { csvLine } from "@/lib/report-export";
 
 interface PageStat {
   pageId: string;
   name: string;
-  conversationsFetched: number;
-  withCustomerMsg: number;
-  noStaffSeenYet: number;
-  sampleWithGap: number;
+  count: number;
   medianMinutes: number | null;
   avgMinutes: number | null;
-  oldestConversationAt: string | null;
-  coverageIncomplete: boolean;
-  error?: string;
 }
 
 interface AdminStat {
@@ -50,33 +45,46 @@ function shiftDateStr(dateStr: string, days: number): string {
   return shifted.toISOString().slice(0, 10);
 }
 
-const QUICK_PRESETS = [
-  { label: "วันนี้", offset: 0 },
-  { label: "เมื่อวาน", offset: -1 },
-  { label: "2 วันก่อน", offset: -2 },
-  { label: "3 วันก่อน", offset: -3 },
-  { label: "7 วันก่อน", offset: -7 },
+function startOfMonthStr(dateStr: string): string {
+  const [y, m] = dateStr.split("-");
+  return `${y}-${m}-01`;
+}
+
+const THIS_MONTH_START = startOfMonthStr(TODAY);
+const LAST_MONTH_END = shiftDateStr(THIS_MONTH_START, -1);
+const LAST_MONTH_START = startOfMonthStr(LAST_MONTH_END);
+
+const QUICK_PRESETS: { label: string; since: string; until: string }[] = [
+  { label: "วันนี้", since: TODAY, until: TODAY },
+  { label: "เมื่อวาน", since: shiftDateStr(TODAY, -1), until: shiftDateStr(TODAY, -1) },
+  { label: "2 วันก่อน", since: shiftDateStr(TODAY, -2), until: shiftDateStr(TODAY, -2) },
+  { label: "3 วันก่อน", since: shiftDateStr(TODAY, -3), until: shiftDateStr(TODAY, -3) },
+  { label: "7 วันก่อน", since: shiftDateStr(TODAY, -7), until: shiftDateStr(TODAY, -7) },
+  { label: "เดือนนี้", since: THIS_MONTH_START, until: TODAY },
+  { label: "เดือนที่แล้ว", since: LAST_MONTH_START, until: LAST_MONTH_END },
 ];
 
 export default function AdminResponseTimePage() {
-  const [date, setDate] = useState(TODAY);
+  const [since, setSince] = useState(TODAY);
+  const [until, setUntil] = useState(TODAY);
   const [view, setView] = useState<View>("branch");
   const [pages, setPages] = useState<PageStat[]>([]);
   const [byAdmin, setByAdmin] = useState<AdminStat[]>([]);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
-  const [fetchedAt, setFetchedAt] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
 
-  const load = useCallback(async (forDate: string, forceRefresh = false) => {
+  const load = useCallback(async (forSince: string, forUntil: string) => {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/admin/response-time?date=${forDate}${forceRefresh ? "&refresh=1" : ""}`);
+      const res = await fetch(`/api/admin/response-time?since=${forSince}&until=${forUntil}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "โหลดข้อมูลไม่สำเร็จ");
       setPages(data.pages || []);
       setByAdmin(data.byAdmin || []);
-      setFetchedAt(data.fetchedAt || null);
+      setLastSyncedAt(data.lastSyncedAt || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "โหลดข้อมูลไม่สำเร็จ");
     } finally {
@@ -86,13 +94,48 @@ export default function AdminResponseTimePage() {
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    load(date);
-  }, [load, date]);
+    load(since, until);
+  }, [load, since, until]);
 
-  const totalWithMsg = pages.reduce((s, p) => s + p.withCustomerMsg, 0);
-  const totalNoSeen = pages.reduce((s, p) => s + p.noStaffSeenYet, 0);
-  const anyIncomplete = pages.some((p) => p.coverageIncomplete);
+  const syncNow = useCallback(async () => {
+    setSyncing(true);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/sync-pancake-now", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "ซิงก์ไม่สำเร็จ");
+      await load(since, until);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "ซิงก์ไม่สำเร็จ");
+    } finally {
+      setSyncing(false);
+    }
+  }, [load, since, until]);
+
+  const totalWithMsg = useMemo(() => pages.reduce((s, p) => s + p.count, 0), [pages]);
   const totalAnswered = useMemo(() => byAdmin.reduce((s, a) => s + a.count, 0), [byAdmin]);
+
+  const exportCsv = useCallback(() => {
+    const header = view === "branch"
+      ? ["สาขา", "ตอบกี่ครั้ง", "median(นาที)", "avg(นาที)"]
+      : ["แอดมิน", "ตอบกี่ครั้ง", "median(นาที)", "avg(นาที)"];
+    const rows: unknown[][] = view === "branch"
+      ? pages.map((p) => [p.name, p.count, p.medianMinutes ?? "", p.avgMinutes ?? ""])
+      : byAdmin.map((a) => [a.adminName, a.count, a.medianMinutes ?? "", a.avgMinutes ?? ""]);
+    const csv = [header, ...rows].map(csvLine).join("\r\n");
+    // ใส่ BOM ให้ Excel เปิดแล้วอ่านภาษาไทยไม่เพี้ยน
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pancake-response-time-${view}-${since}_${until}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [view, pages, byAdmin, since, until]);
+
+  const exportDisabled = view === "branch" ? pages.length === 0 : byAdmin.length === 0;
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -103,15 +146,32 @@ export default function AdminResponseTimePage() {
               <MessageCircle className="w-5 h-5 text-indigo-400 flex-shrink-0" />
               เวลาตอบแชท — Pancake
             </h1>
-            {fetchedAt && (
+            {lastSyncedAt && (
               <p className="text-xs text-gray-400 mt-1">
-                ดึงเมื่อ {new Date(fetchedAt).toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok" })}
+                ข้อมูลซิงก์ล่าสุด {new Date(lastSyncedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "short", timeStyle: "short" })}
               </p>
             )}
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => load(date, true)}
+              onClick={exportCsv}
+              disabled={exportDisabled}
+              className="flex items-center gap-1.5 sm:gap-2 px-3 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs sm:text-sm font-medium transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden xs:inline">Export CSV</span>
+            </button>
+            <button
+              onClick={syncNow}
+              disabled={syncing}
+              title="ดึงบทสนทนาล่าสุดจาก Pancake มาเก็บลง DB ตอนนี้เลย (ปกติรันอัตโนมัติทุกคืน)"
+              className="flex items-center gap-1.5 sm:gap-2 px-3 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg text-xs sm:text-sm font-medium transition-colors"
+            >
+              <DatabaseZap className={`w-4 h-4 ${syncing ? "animate-pulse" : ""}`} />
+              <span className="hidden xs:inline">{syncing ? "กำลังซิงก์..." : "ซิงก์ตอนนี้"}</span>
+            </button>
+            <button
+              onClick={() => load(since, until)}
               disabled={loading}
               className="flex items-center gap-1.5 sm:gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-lg text-xs sm:text-sm font-medium transition-colors"
             >
@@ -124,28 +184,36 @@ export default function AdminResponseTimePage() {
 
         <div className="flex items-center gap-2 flex-wrap mb-3">
           <div className="flex gap-1 bg-gray-800 rounded-lg p-1 overflow-x-auto">
-            {QUICK_PRESETS.map((p) => {
-              const value = shiftDateStr(TODAY, p.offset);
-              return (
-                <button
-                  key={p.label}
-                  onClick={() => setDate(value)}
-                  className={`px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
-                    date === value ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white"
-                  }`}
-                >
-                  {p.label}
-                </button>
-              );
-            })}
+            {QUICK_PRESETS.map((p) => (
+              <button
+                key={p.label}
+                onClick={() => { setSince(p.since); setUntil(p.until); }}
+                className={`px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
+                  since === p.since && until === p.until ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
-          <input
-            type="date"
-            value={date}
-            max={TODAY}
-            onChange={(e) => e.target.value && setDate(e.target.value)}
-            className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-xs sm:text-sm text-gray-200 [color-scheme:dark]"
-          />
+          <div className="flex items-center gap-1.5">
+            <input
+              type="date"
+              value={since}
+              max={until}
+              onChange={(e) => e.target.value && setSince(e.target.value)}
+              className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-xs sm:text-sm text-gray-200 [color-scheme:dark]"
+            />
+            <span className="text-gray-500 text-xs">–</span>
+            <input
+              type="date"
+              value={until}
+              min={since}
+              max={TODAY}
+              onChange={(e) => e.target.value && setUntil(e.target.value)}
+              className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-xs sm:text-sm text-gray-200 [color-scheme:dark]"
+            />
+          </div>
           <div className="flex gap-1 bg-gray-800 rounded-lg p-1">
             {([
               { key: "branch" as View, label: "รายสาขา" },
@@ -172,9 +240,7 @@ export default function AdminResponseTimePage() {
 
         {!error && view === "branch" && pages.length > 0 && (
           <p className="text-xs text-gray-400 mt-4 mb-2">
-            รวม {pages.length} เพจ · บทสนทนาที่ลูกค้าทักมา {totalWithMsg.toLocaleString("th-TH")} ·
-            ยังไม่มีแอดมินเปิดดูเลย {totalNoSeen.toLocaleString("th-TH")}
-            {totalWithMsg > 0 && ` (${((totalNoSeen / totalWithMsg) * 100).toFixed(1)}%)`}
+            รวม {pages.length} เพจ · ตอบไปทั้งหมด {totalWithMsg.toLocaleString("th-TH")} บทสนทนา
           </p>
         )}
 
@@ -184,10 +250,10 @@ export default function AdminResponseTimePage() {
           </p>
         )}
 
-        {!error && view === "branch" && anyIncomplete && (
+        {!error && !loading && pages.length === 0 && byAdmin.length === 0 && (
           <div className="mb-3 p-2.5 rounded-lg bg-amber-950/40 border border-amber-800/60 text-amber-300 text-xs">
-            ⚠️ วันที่เลือกย้อนไกลกว่าข้อมูลที่ดึงมาได้สำหรับบางเพจ (Pancake ให้ดึงได้แค่ &ldquo;บทสนทนาล่าสุด&rdquo; ไม่ใช่ตามช่วงวันที่)
-            ตัวเลขของเพจที่ขึ้น <span className="text-amber-200 font-medium">*</span> อาจนับไม่ครบทั้งวัน
+            ⚠️ ยังไม่มีข้อมูลที่เก็บไว้สำหรับช่วงนี้ — ระบบซิงก์ข้อมูลจาก Pancake มาเก็บถาวรทุกคืน
+            ช่วงก่อนเริ่มเก็บจะมีเฉพาะเพจที่คุยไม่บ่อยจนบทสนทนายังค้างอยู่ใน &ldquo;ล่าสุด&rdquo; ของ Pancake ตอนซิงก์ครั้งแรกเท่านั้น
           </div>
         )}
 
@@ -198,24 +264,16 @@ export default function AdminResponseTimePage() {
           {pages.map((p) => (
             <div key={p.pageId} className="rounded-xl border border-gray-800 bg-gray-900/60 p-3">
               <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-medium leading-snug">
-                  {p.name}
-                  {p.coverageIncomplete && <span className="text-amber-400">*</span>}
-                </p>
+                <p className="text-sm font-medium leading-snug">{p.name}</p>
                 <div className={`text-lg font-bold ${medianColor(p.medianMinutes)} flex-shrink-0`}>
                   {fmtMin(p.medianMinutes)}
                   <span className="text-[10px] font-normal text-gray-500 ml-1">นาที</span>
                 </div>
               </div>
-              {p.error ? (
-                <p className="text-[11px] text-rose-400 mt-1">{p.error}</p>
-              ) : (
-                <div className="flex items-center gap-3 mt-1.5 text-[11px] text-gray-400">
-                  <span>บทสนทนา {p.withCustomerMsg}</span>
-                  <span>ไม่มีคนดู {p.noStaffSeenYet}</span>
-                  <span>avg {fmtMin(p.avgMinutes)} นาที</span>
-                </div>
-              )}
+              <div className="flex items-center gap-3 mt-1.5 text-[11px] text-gray-400">
+                <span>ตอบ {p.count} ครั้ง</span>
+                <span>avg {fmtMin(p.avgMinutes)} นาที</span>
+              </div>
             </div>
           ))}
           {!loading && pages.length === 0 && !error && (
@@ -229,8 +287,7 @@ export default function AdminResponseTimePage() {
             <thead className="bg-gray-900">
               <tr className="border-b border-gray-800 text-gray-400 text-xs">
                 <th className="text-left py-2.5 px-3 font-medium">สาขา</th>
-                <th className="text-right py-2.5 px-3 font-medium">บทสนทนา</th>
-                <th className="text-right py-2.5 px-3 font-medium">ยังไม่มีคนดู</th>
+                <th className="text-right py-2.5 px-3 font-medium">ตอบกี่ครั้ง</th>
                 <th className="text-right py-2.5 px-3 font-medium">median (นาที)</th>
                 <th className="text-right py-2.5 px-3 font-medium">avg (นาที)</th>
               </tr>
@@ -238,13 +295,8 @@ export default function AdminResponseTimePage() {
             <tbody>
               {pages.map((p) => (
                 <tr key={p.pageId} className="border-b border-gray-800/50 hover:bg-gray-900/50">
-                  <td className="py-2 px-3">
-                    {p.name}
-                    {p.coverageIncomplete && <span className="text-amber-400">*</span>}
-                    {p.error && <span className="ml-2 text-[10px] text-rose-400">({p.error})</span>}
-                  </td>
-                  <td className="py-2 px-3 text-right text-gray-300">{p.withCustomerMsg}</td>
-                  <td className="py-2 px-3 text-right text-gray-300">{p.noStaffSeenYet}</td>
+                  <td className="py-2 px-3">{p.name}</td>
+                  <td className="py-2 px-3 text-right text-gray-300">{p.count}</td>
                   <td className={`py-2 px-3 text-right font-semibold ${medianColor(p.medianMinutes)}`}>
                     {fmtMin(p.medianMinutes)}
                   </td>
@@ -253,7 +305,7 @@ export default function AdminResponseTimePage() {
               ))}
               {!loading && pages.length === 0 && !error && (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-gray-500">
+                  <td colSpan={4} className="py-8 text-center text-gray-500">
                     ไม่มีข้อมูล
                   </td>
                 </tr>

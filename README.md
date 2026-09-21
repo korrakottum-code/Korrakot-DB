@@ -160,20 +160,31 @@ OPENAI_API_KEY=... META_ACCESS_TOKEN=... npm run refresh-checklist
 ให้ระบบอื่น (เช่น Qlass ดึงไปคำนวณ CPO) อ่านยอดใช้จ่ายโฆษณารวมทุกบัญชี ตามช่วงวันที่ที่ระบุ — **ทางเดียว**: Korrakot-DB ไม่เชื่อมต่อ อ่าน หรือเขียนฐานข้อมูลของระบบอื่นใดเลย (ดูกติกาใน `AGENTS.md`) ระบบอื่นเป็นฝ่ายเรียกเข้ามาเอง
 
 ```
-GET /api/external/ads-spend?since=2026-08-01&until=2026-08-31
+GET /api/external/ads-spend?since=2026-08-01&until=2026-08-31[&groupBy=day]
 Header: Authorization: Bearer <EXTERNAL_API_KEY>
 ```
 
-ตอบกลับ:
+ตอบกลับ (ไม่ใส่ `groupBy`):
 
 ```json
 { "since": "2026-08-01", "until": "2026-08-31", "spend": 774245, "currency": "THB", "asOf": "2026-08-19T01:15:22.307Z" }
+```
+
+ตอบกลับ (`groupBy=day`) — เพิ่ม field `daily` เข้าไปเฉยๆ ไม่เปลี่ยน field เดิม:
+
+```json
+{
+  "since": "2026-08-01", "until": "2026-08-31", "spend": 774245, "currency": "THB", "asOf": "2026-08-19T01:15:22.307Z",
+  "daily": [{ "day": "2026-08-01", "spend": 24801 }, { "day": "2026-08-02", "spend": 26120 }, "..."]
+}
 ```
 
 - คนละ auth กับ Login หน้าเว็บทีมงานโดยสิ้นเชิง (`EXTERNAL_API_KEY` ไม่ใช่ `INTERNAL_DASHBOARD_PASSWORD`) — เพิกถอนสิทธิ์ระบบภายนอกได้โดยไม่กระทบทีม
 - ตั้งค่าใน `.env.local`/Vercel: `EXTERNAL_API_KEY=` (อย่างน้อย 32 ตัวอักษร) สร้างด้วย `openssl rand -base64 48` — ถ้ายังไม่ตั้งค่า API จะปิดรับ request ทั้งหมด (fail closed)
 - ความสดของข้อมูล: เสิร์ฟจาก Postgres เสมอ แล้ว sync กับ Meta เบื้องหลังไม่เกินชั่วโมงละครั้ง (ตามที่ขอ — เรียกถี่แค่ไหนก็ไม่ยิง Meta ซ้ำถี่กว่านั้น)
 - `since`/`until` ต้องระบุคู่กันเสมอ รูปแบบ `YYYY-MM-DD` ไม่เกิน 370 วัน — ไม่มี preset ให้เดา (ต่างจาก `/api/insights` ที่ใช้ในหน้าเว็บ)
+- `groupBy` เป็น optional — ไม่ใส่ = response แบบเดิมทุกประการ (backward compatible) ใส่ค่าอื่นที่ไม่ใช่ `day` = 400 `"groupBy รองรับเฉพาะค่า day"`
+- `daily` แต่ละแถวคือ `{ day: "YYYY-MM-DD", spend: number }` ครบทุกวันในช่วง (วันไม่มีค่าใช้จ่ายจะได้ `spend: 0`) — ถ้าช่วงวันที่กว้างเกิน 100 วัน จะได้ `daily: null` แทน (**ไม่ 400** — `spend`/`since`/`until` รวมยังตอบตามปกติ)
 - error ของงาน sync เบื้องหลังบันทึกลง log เดียวกับหน้าเว็บ ดูได้ที่ `/api/sync-errors`
 
 ## API ภายนอก: ผลโฆษณาแยกรายสาขา (`/api/external/branch-metrics`)

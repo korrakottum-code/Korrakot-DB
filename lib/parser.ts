@@ -207,7 +207,7 @@ export const NON_SERVICE_BRANCH_PROGRAM: Record<string, string> = {
  * รหัสสาขาเก่าที่เลิกใช้แล้ว → รหัสที่ถูกต้อง
  * ชื่อแอดเดิมใน Meta ยังเขียนรหัสเก่าอยู่ จึงต้องยุบให้เองตอนอ่าน
  * ไม่งั้นยอดของสาขานั้นจะหลุดไปเป็น "สาขาไม่รู้จัก"
- * แอดที่ยังใช้รหัสเก่าจะถูกทำเครื่องหมาย isCanonicalName = false ไว้ให้ตามไปแก้ชื่อ
+ * แอดที่ยังใช้รหัสเก่าจะถูกทำเครื่องหมาย usesObsoleteBranchCode = true ไว้ให้ตามไปแก้ชื่อ
  */
 export const BRANCH_ALIASES: Record<string, string> = {
   "N-BPG": "BPG",
@@ -283,8 +283,8 @@ export interface ParsedAdName {
   awCode: string;
   isParsed: boolean;     // false if format not recognized
   status: AdNameStatus;  // เหตุผลที่อ่านได้/ไม่ได้ ใช้แยกกลุ่มในหน้าเตือน
-  /** ชื่อขึ้นต้นด้วยรหัสสาขาที่ลงทะเบียนไว้แล้วตามด้วยรหัส AW ตรงกติกา ไม่มีคำนำหน้า */
-  isCanonicalName: boolean;
+  /** ชื่อยังใช้รหัสสาขาเก่าที่เลิกใช้แล้ว (ดู BRANCH_ALIASES) — ควรตามไปแก้ชื่อใน Meta */
+  usesObsoleteBranchCode: boolean;
   /** รหัสหมวดย่อย (เช่น F02) มีอยู่ในตารางตั้งค่าแล้วหรือยัง */
   isSubRegistered: boolean;
 }
@@ -293,12 +293,15 @@ export function parseAdName(adName: string): ParsedAdName {
   const raw = adName.trim();
   const branchMap = getBranchMap();
 
-  // Find branch code anywhere in the tokens (not necessarily first)
+  // รหัสจริงอยู่ท้ายชื่อเสมอ: [ข้อความโน้ตอะไรก็ได้] [รหัสสาขา] [รหัส AW]
+  // ข้อความข้างหน้าเป็นโน้ตที่คนตั้งใจใส่ไว้กันลืมว่าแอดคืออะไร ไม่ใช่ความผิดพลาด
+  // จึงไล่หารหัสสาขาจากท้ายมาหน้า ไม่ใช่จากหน้าไปท้าย — กันกรณีที่โน้ตข้างหน้า
+  // มีรหัสสาขาปนอยู่ด้วย เช่น "30up BRM MKM PM00-0032" สาขาจริงคือ MKM ไม่ใช่ BRM
   const parts = raw.split(" ");
   let branchCode = "";
   let branchIndex = -1;
   let usedAlias = false;
-  for (let i = 0; i < parts.length; i++) {
+  for (let i = parts.length - 1; i >= 0; i--) {
     const token = parts[i].toUpperCase();
     // รหัสเก่าที่เลิกใช้แล้วถูกยุบเป็นรหัสจริงก่อน แม้จะยังค้างอยู่ในตารางตั้งค่า
     const canonical = BRANCH_ALIASES[token] || token;
@@ -378,9 +381,8 @@ export function parseAdName(adName: string): ParsedAdName {
       awCode,
       isParsed: true,
       status: "ok",
-      // ตรงกติกาเต็มรูปแบบ = รหัสสาขาที่ลงทะเบียนแล้วอยู่ต้นชื่อ ไม่มีคำนำหน้า
-      // และต้องเป็นรหัสปัจจุบัน ไม่ใช่รหัสเก่าที่ถูกยุบมา
-      isCanonicalName: branchFound && branchIndex === 0 && !usedAlias,
+      // ข้อความนำหน้าไม่ถือว่าผิด เหลือธงเดียวคือยังใช้รหัสสาขาเก่าอยู่หรือเปล่า
+      usesObsoleteBranchCode: usedAlias,
       isSubRegistered,
     };
   }
@@ -437,7 +439,7 @@ function specialResult(
     awCode,
     isParsed: true,
     status: "special",
-    isCanonicalName: false,
+    usesObsoleteBranchCode: false,
     isSubRegistered: true,
   };
 }
@@ -471,7 +473,7 @@ function codelessResult(
     awCode,
     isParsed: false,
     status,
-    isCanonicalName: false,
+    usesObsoleteBranchCode: false,
     isSubRegistered: true,
   };
 }

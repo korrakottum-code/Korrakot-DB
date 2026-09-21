@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireInternalApiAuth } from "@/lib/api-auth";
 import { consumeApiRateLimit } from "@/lib/rate-limit";
 import { getServerCache } from "@/lib/server-cache";
-import { fetchAllPagesConversations, statsForDay, todayBangkokDateStr } from "@/lib/pancake";
+import { fetchAllPagesConversations, statsForDay, statsByAdminForDay, todayBangkokDateStr } from "@/lib/pancake";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,9 +45,11 @@ export async function GET(req: NextRequest) {
       forceRefresh
     );
     const pages = statsForDay(cached.value, date);
+    const byAdmin = statsByAdminForDay(cached.value, date);
     return NextResponse.json({
       date,
       pages,
+      byAdmin,
       fetchedAt: cached.fetchedAt,
       cache: { hit: cached.hit },
     });

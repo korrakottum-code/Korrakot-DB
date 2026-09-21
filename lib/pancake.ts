@@ -91,7 +91,7 @@ export async function fetchClassClinicPages(token: string): Promise<PancakePage[
 
 export interface PancakeConversation {
   last_customer_interactive_at?: string;
-  recent_seen_users?: Array<{ seen_at: string }>;
+  recent_seen_users?: Array<{ seen_at: string; fb_id?: string; fb_name?: string }>;
 }
 
 /**
@@ -160,6 +160,70 @@ export function computeStats(
     oldestConversationAt: oldest !== null ? new Date(oldest).toISOString() : null,
     coverageIncomplete: dayRangeMs !== undefined && (oldest === null || oldest > dayRangeMs.sinceMs),
   };
+}
+
+export interface AdminResponseStats {
+  adminId: string;
+  adminName: string;
+  /** จำนวนบทสนทนาที่แอดมินคนนี้เป็นคนตอบคนแรก (เฉพาะที่ "ตอบแล้ว" เท่านั้น — ไม่รวมที่ยังไม่มีใครดู) */
+  count: number;
+  medianMinutes: number | null;
+  avgMinutes: number | null;
+}
+
+/**
+ * รวมยอด "ใครตอบเร็ว/ช้าแค่ไหน" ข้ามทุกเพจในเครือ (ไม่แยกรายสาขา) — นับเฉพาะบทสนทนาที่มีคน
+ * ตอบจริง (seen_at หลังลูกค้าทักล่าสุด) แอดมินที่ตอบเร็วสุดในแต่ละบทสนทนาคือคนที่ได้เครดิตของ
+ * บทสนทนานั้น (คนเดียว ไม่ให้ซ้ำหลายคนถ้ามีหลายคนเข้าไปดู)
+ */
+export function computeAdminStats(
+  conversations: PancakeConversation[],
+  dayRangeMs: { sinceMs: number; untilMs: number }
+): AdminResponseStats[] {
+  const gapsByAdmin = new Map<string, { name: string; gaps: number[] }>();
+
+  for (const c of conversations) {
+    const lastCustomer = c.last_customer_interactive_at;
+    if (!lastCustomer) continue;
+    const lastCustomerMs = parsePancakeTime(lastCustomer);
+    if (lastCustomerMs < dayRangeMs.sinceMs || lastCustomerMs >= dayRangeMs.untilMs) continue;
+
+    const seenAfter = (c.recent_seen_users || [])
+      .map((u) => ({ ms: parsePancakeTime(u.seen_at), id: u.fb_id || "", name: u.fb_name || "ไม่ทราบชื่อ" }))
+      .filter((u) => u.ms >= lastCustomerMs);
+    if (seenAfter.length === 0) continue; // เฉพาะที่ตอบแล้วเท่านั้น
+
+    const first = seenAfter.reduce((a, b) => (a.ms < b.ms ? a : b));
+    const gapMin = (first.ms - lastCustomerMs) / 60_000;
+    if (gapMin < 0 || gapMin >= MAX_GAP_MINUTES) continue;
+
+    const key = first.id || first.name;
+    const bucket = gapsByAdmin.get(key) || { name: first.name, gaps: [] };
+    bucket.gaps.push(gapMin);
+    gapsByAdmin.set(key, bucket);
+  }
+
+  const stats: AdminResponseStats[] = [...gapsByAdmin.entries()].map(([adminId, { name, gaps }]) => {
+    gaps.sort((a, b) => a - b);
+    const median = gaps[Math.floor(gaps.length / 2)];
+    const avg = gaps.reduce((s, v) => s + v, 0) / gaps.length;
+    return {
+      adminId,
+      adminName: name,
+      count: gaps.length,
+      medianMinutes: Math.round(median * 10) / 10,
+      avgMinutes: Math.round(avg * 10) / 10,
+    };
+  });
+
+  return stats.sort((a, b) => (b.medianMinutes ?? -1) - (a.medianMinutes ?? -1));
+}
+
+/** เหมือน statsForDay แต่รวมทุกเพจเข้าด้วยกันก่อน แล้วสรุปเป็นรายแอดมินแทนรายสาขา */
+export function statsByAdminForDay(raw: RawPageConversations[], dateStr: string): AdminResponseStats[] {
+  const dayRangeMs = bangkokDayRangeMs(dateStr);
+  const allConversations = raw.flatMap((r) => r.conversations);
+  return computeAdminStats(allConversations, dayRangeMs);
 }
 
 interface RawPageConversations {

@@ -1,13 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { computeStats, bangkokDayRangeMs, MAX_GAP_MINUTES, type PancakeConversation } from "../lib/pancake.ts";
+import { computeStats, computeAdminStats, bangkokDayRangeMs, MAX_GAP_MINUTES, type PancakeConversation } from "../lib/pancake.ts";
 
 // Pancake ส่ง timestamp แบบ naive ไม่มี Z/offset ต่อท้าย (เช่น "2026-09-17T03:53:00") แต่ค่าจริงคือ
 // เวลา Bangkok local — fixture ทุกตัวในไฟล์นี้จึงตั้งใจไม่ใส่ Z ให้ตรงกับข้อมูลจริงที่ API ส่งมา
 const conv = (lastCustomer: string, seenAts: string[] = []): PancakeConversation => ({
   last_customer_interactive_at: lastCustomer,
   recent_seen_users: seenAts.map((seen_at) => ({ seen_at })),
+});
+
+const convBy = (
+  lastCustomer: string,
+  seen: Array<{ seen_at: string; fb_id: string; fb_name: string }>
+): PancakeConversation => ({
+  last_customer_interactive_at: lastCustomer,
+  recent_seen_users: seen,
 });
 
 test("computeStats ignores conversations with no customer message", () => {
@@ -95,4 +103,66 @@ test("bangkokDayRangeMs is independent of the process's system timezone (Bangkok
   const { sinceMs, untilMs } = bangkokDayRangeMs("2026-09-17");
   assert.equal(new Date(sinceMs).toISOString(), "2026-09-16T17:00:00.000Z");
   assert.equal(new Date(untilMs).toISOString(), "2026-09-17T17:00:00.000Z");
+});
+
+test("computeAdminStats only counts conversations that were actually replied to", () => {
+  const dayRange = bangkokDayRangeMs("2026-09-17");
+  const stats = computeAdminStats(
+    [
+      convBy("2026-09-17T09:00:00", [{ seen_at: "2026-09-17T09:05:00", fb_id: "u1", fb_name: "Ammy" }]),
+      conv("2026-09-17T09:00:00"), // ยังไม่มีใครดูเลย — ไม่นับ
+    ],
+    dayRange
+  );
+  assert.equal(stats.length, 1);
+  assert.equal(stats[0].adminName, "Ammy");
+  assert.equal(stats[0].count, 1);
+  assert.equal(stats[0].medianMinutes, 5);
+});
+
+test("computeAdminStats credits only the first (fastest) responder when several admins viewed the same conversation", () => {
+  const dayRange = bangkokDayRangeMs("2026-09-17");
+  const stats = computeAdminStats(
+    [
+      convBy("2026-09-17T09:00:00", [
+        { seen_at: "2026-09-17T09:20:00", fb_id: "u2", fb_name: "Bee" },
+        { seen_at: "2026-09-17T09:05:00", fb_id: "u1", fb_name: "Ammy" }, // เร็วสุด — ได้เครดิต
+      ]),
+    ],
+    dayRange
+  );
+  assert.equal(stats.length, 1);
+  assert.equal(stats[0].adminName, "Ammy");
+  assert.equal(stats[0].adminId, "u1");
+});
+
+test("computeAdminStats aggregates multiple conversations per admin across pages (median/avg/count)", () => {
+  const dayRange = bangkokDayRangeMs("2026-09-17");
+  const stats = computeAdminStats(
+    [
+      convBy("2026-09-17T09:00:00", [{ seen_at: "2026-09-17T09:02:00", fb_id: "u1", fb_name: "Ammy" }]), // 2 min
+      convBy("2026-09-17T10:00:00", [{ seen_at: "2026-09-17T10:04:00", fb_id: "u1", fb_name: "Ammy" }]), // 4 min
+      convBy("2026-09-17T11:00:00", [{ seen_at: "2026-09-17T11:30:00", fb_id: "u2", fb_name: "Bee" }]), // 30 min
+    ],
+    dayRange
+  );
+  const ammy = stats.find((s) => s.adminId === "u1")!;
+  const bee = stats.find((s) => s.adminId === "u2")!;
+  assert.equal(ammy.count, 2);
+  assert.equal(ammy.medianMinutes, 4); // sorted [2,4] → index 1
+  assert.equal(ammy.avgMinutes, 3);
+  assert.equal(bee.count, 1);
+  assert.equal(bee.medianMinutes, 30);
+});
+
+test("computeAdminStats respects the same Bangkok day-range filter as computeStats", () => {
+  const dayRange = bangkokDayRangeMs("2026-09-17");
+  const stats = computeAdminStats(
+    [
+      // 23:30 คืนวันที่ 16 (Bangkok) — เมื่อวาน ไม่นับเข้าวันที่ 17
+      convBy("2026-09-16T23:30:00", [{ seen_at: "2026-09-16T23:35:00", fb_id: "u1", fb_name: "Ammy" }]),
+    ],
+    dayRange
+  );
+  assert.equal(stats.length, 0);
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, MessageCircle } from "lucide-react";
 import LogoutButton from "@/components/LogoutButton";
 import { todayBangkokDateStr } from "@/lib/pancake";
@@ -18,6 +18,16 @@ interface PageStat {
   coverageIncomplete: boolean;
   error?: string;
 }
+
+interface AdminStat {
+  adminId: string;
+  adminName: string;
+  count: number;
+  medianMinutes: number | null;
+  avgMinutes: number | null;
+}
+
+type View = "branch" | "admin";
 
 function fmtMin(v: number | null) {
   return v === null ? "-" : v.toFixed(1);
@@ -50,7 +60,9 @@ const QUICK_PRESETS = [
 
 export default function AdminResponseTimePage() {
   const [date, setDate] = useState(TODAY);
+  const [view, setView] = useState<View>("branch");
   const [pages, setPages] = useState<PageStat[]>([]);
+  const [byAdmin, setByAdmin] = useState<AdminStat[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
@@ -63,6 +75,7 @@ export default function AdminResponseTimePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "โหลดข้อมูลไม่สำเร็จ");
       setPages(data.pages || []);
+      setByAdmin(data.byAdmin || []);
       setFetchedAt(data.fetchedAt || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "โหลดข้อมูลไม่สำเร็จ");
@@ -79,6 +92,7 @@ export default function AdminResponseTimePage() {
   const totalWithMsg = pages.reduce((s, p) => s + p.withCustomerMsg, 0);
   const totalNoSeen = pages.reduce((s, p) => s + p.noStaffSeenYet, 0);
   const anyIncomplete = pages.some((p) => p.coverageIncomplete);
+  const totalAnswered = useMemo(() => byAdmin.reduce((s, a) => s + a.count, 0), [byAdmin]);
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -132,6 +146,22 @@ export default function AdminResponseTimePage() {
             onChange={(e) => e.target.value && setDate(e.target.value)}
             className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-xs sm:text-sm text-gray-200 [color-scheme:dark]"
           />
+          <div className="flex gap-1 bg-gray-800 rounded-lg p-1">
+            {([
+              { key: "branch" as View, label: "รายสาขา" },
+              { key: "admin" as View, label: "รายแอดมิน" },
+            ]).map((v) => (
+              <button
+                key={v.key}
+                onClick={() => setView(v.key)}
+                className={`px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  view === v.key ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white"
+                }`}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {error && (
@@ -140,7 +170,7 @@ export default function AdminResponseTimePage() {
           </div>
         )}
 
-        {!error && pages.length > 0 && (
+        {!error && view === "branch" && pages.length > 0 && (
           <p className="text-xs text-gray-400 mt-4 mb-2">
             รวม {pages.length} เพจ · บทสนทนาที่ลูกค้าทักมา {totalWithMsg.toLocaleString("th-TH")} ·
             ยังไม่มีแอดมินเปิดดูเลย {totalNoSeen.toLocaleString("th-TH")}
@@ -148,13 +178,21 @@ export default function AdminResponseTimePage() {
           </p>
         )}
 
-        {!error && anyIncomplete && (
+        {!error && view === "admin" && byAdmin.length > 0 && (
+          <p className="text-xs text-gray-400 mt-4 mb-2">
+            แอดมิน {byAdmin.length} คน · ตอบไปทั้งหมด {totalAnswered.toLocaleString("th-TH")} บทสนทนา (รวมทุกสาขาในเครือ Class)
+          </p>
+        )}
+
+        {!error && view === "branch" && anyIncomplete && (
           <div className="mb-3 p-2.5 rounded-lg bg-amber-950/40 border border-amber-800/60 text-amber-300 text-xs">
             ⚠️ วันที่เลือกย้อนไกลกว่าข้อมูลที่ดึงมาได้สำหรับบางเพจ (Pancake ให้ดึงได้แค่ &ldquo;บทสนทนาล่าสุด&rdquo; ไม่ใช่ตามช่วงวันที่)
             ตัวเลขของเพจที่ขึ้น <span className="text-amber-200 font-medium">*</span> อาจนับไม่ครบทั้งวัน
           </div>
         )}
 
+        {view !== "branch" ? null : (
+        <>
         {/* Mobile: การ์ดแนวตั้ง ไม่ต้องเลื่อนขวา */}
         <div className="sm:hidden space-y-2">
           {pages.map((p) => (
@@ -223,6 +261,67 @@ export default function AdminResponseTimePage() {
             </tbody>
           </table>
         </div>
+        </>
+        )}
+
+        {view === "admin" && (
+        <>
+        {/* Mobile: การ์ดแนวตั้ง */}
+        <div className="sm:hidden space-y-2">
+          {byAdmin.map((a) => (
+            <div key={a.adminId} className="rounded-xl border border-gray-800 bg-gray-900/60 p-3">
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm font-medium leading-snug">{a.adminName}</p>
+                <div className={`text-lg font-bold ${medianColor(a.medianMinutes)} flex-shrink-0`}>
+                  {fmtMin(a.medianMinutes)}
+                  <span className="text-[10px] font-normal text-gray-500 ml-1">นาที</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 mt-1.5 text-[11px] text-gray-400">
+                <span>ตอบ {a.count} ครั้ง</span>
+                <span>avg {fmtMin(a.avgMinutes)} นาที</span>
+              </div>
+            </div>
+          ))}
+          {!loading && byAdmin.length === 0 && !error && (
+            <p className="py-8 text-center text-gray-500 text-sm">ไม่มีข้อมูล</p>
+          )}
+        </div>
+
+        {/* Desktop/tablet: ตาราง */}
+        <div className="hidden sm:block overflow-x-auto rounded-xl border border-gray-800">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-900">
+              <tr className="border-b border-gray-800 text-gray-400 text-xs">
+                <th className="text-left py-2.5 px-3 font-medium">แอดมิน</th>
+                <th className="text-right py-2.5 px-3 font-medium">ตอบกี่ครั้ง</th>
+                <th className="text-right py-2.5 px-3 font-medium">median (นาที)</th>
+                <th className="text-right py-2.5 px-3 font-medium">avg (นาที)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {byAdmin.map((a) => (
+                <tr key={a.adminId} className="border-b border-gray-800/50 hover:bg-gray-900/50">
+                  <td className="py-2 px-3">{a.adminName}</td>
+                  <td className="py-2 px-3 text-right text-gray-300">{a.count}</td>
+                  <td className={`py-2 px-3 text-right font-semibold ${medianColor(a.medianMinutes)}`}>
+                    {fmtMin(a.medianMinutes)}
+                  </td>
+                  <td className="py-2 px-3 text-right text-gray-300">{fmtMin(a.avgMinutes)}</td>
+                </tr>
+              ))}
+              {!loading && byAdmin.length === 0 && !error && (
+                <tr>
+                  <td colSpan={4} className="py-8 text-center text-gray-500">
+                    ไม่มีข้อมูล
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        </>
+        )}
       </div>
     </div>
   );

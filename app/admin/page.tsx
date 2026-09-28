@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, MessageCircle } from "lucide-react";
+import { RefreshCw, MessageCircle, Download } from "lucide-react";
 import LogoutButton from "@/components/LogoutButton";
 import { todayBangkokDateStr } from "@/lib/pancake";
+import { csvLine } from "@/lib/report-export";
 
 interface PageStat {
   pageId: string;
@@ -50,16 +51,28 @@ function shiftDateStr(dateStr: string, days: number): string {
   return shifted.toISOString().slice(0, 10);
 }
 
-const QUICK_PRESETS = [
-  { label: "วันนี้", offset: 0 },
-  { label: "เมื่อวาน", offset: -1 },
-  { label: "2 วันก่อน", offset: -2 },
-  { label: "3 วันก่อน", offset: -3 },
-  { label: "7 วันก่อน", offset: -7 },
+function startOfMonthStr(dateStr: string): string {
+  const [y, m] = dateStr.split("-");
+  return `${y}-${m}-01`;
+}
+
+const THIS_MONTH_START = startOfMonthStr(TODAY);
+const LAST_MONTH_END = shiftDateStr(THIS_MONTH_START, -1);
+const LAST_MONTH_START = startOfMonthStr(LAST_MONTH_END);
+
+const QUICK_PRESETS: { label: string; since: string; until: string }[] = [
+  { label: "วันนี้", since: TODAY, until: TODAY },
+  { label: "เมื่อวาน", since: shiftDateStr(TODAY, -1), until: shiftDateStr(TODAY, -1) },
+  { label: "2 วันก่อน", since: shiftDateStr(TODAY, -2), until: shiftDateStr(TODAY, -2) },
+  { label: "3 วันก่อน", since: shiftDateStr(TODAY, -3), until: shiftDateStr(TODAY, -3) },
+  { label: "7 วันก่อน", since: shiftDateStr(TODAY, -7), until: shiftDateStr(TODAY, -7) },
+  { label: "เดือนนี้", since: THIS_MONTH_START, until: TODAY },
+  { label: "เดือนที่แล้ว", since: LAST_MONTH_START, until: LAST_MONTH_END },
 ];
 
 export default function AdminResponseTimePage() {
-  const [date, setDate] = useState(TODAY);
+  const [since, setSince] = useState(TODAY);
+  const [until, setUntil] = useState(TODAY);
   const [view, setView] = useState<View>("branch");
   const [pages, setPages] = useState<PageStat[]>([]);
   const [byAdmin, setByAdmin] = useState<AdminStat[]>([]);
@@ -67,11 +80,13 @@ export default function AdminResponseTimePage() {
   const [error, setError] = useState("");
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
 
-  const load = useCallback(async (forDate: string, forceRefresh = false) => {
+  const load = useCallback(async (forSince: string, forUntil: string, forceRefresh = false) => {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/admin/response-time?date=${forDate}${forceRefresh ? "&refresh=1" : ""}`);
+      const res = await fetch(
+        `/api/admin/response-time?since=${forSince}&until=${forUntil}${forceRefresh ? "&refresh=1" : ""}`
+      );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "โหลดข้อมูลไม่สำเร็จ");
       setPages(data.pages || []);
@@ -86,13 +101,35 @@ export default function AdminResponseTimePage() {
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    load(date);
-  }, [load, date]);
+    load(since, until);
+  }, [load, since, until]);
 
   const totalWithMsg = pages.reduce((s, p) => s + p.withCustomerMsg, 0);
   const totalNoSeen = pages.reduce((s, p) => s + p.noStaffSeenYet, 0);
   const anyIncomplete = pages.some((p) => p.coverageIncomplete);
   const totalAnswered = useMemo(() => byAdmin.reduce((s, a) => s + a.count, 0), [byAdmin]);
+
+  const exportCsv = useCallback(() => {
+    const header = view === "branch"
+      ? ["สาขา", "บทสนทนา", "ยังไม่มีคนดู", "median(นาที)", "avg(นาที)", "ข้อมูลอาจไม่ครบ"]
+      : ["แอดมิน", "ตอบกี่ครั้ง", "median(นาที)", "avg(นาที)"];
+    const rows: unknown[][] = view === "branch"
+      ? pages.map((p) => [p.name, p.withCustomerMsg, p.noStaffSeenYet, p.medianMinutes ?? "", p.avgMinutes ?? "", p.coverageIncomplete ? "ใช่" : ""])
+      : byAdmin.map((a) => [a.adminName, a.count, a.medianMinutes ?? "", a.avgMinutes ?? ""]);
+    const csv = [header, ...rows].map(csvLine).join("\r\n");
+    // ใส่ BOM ให้ Excel เปิดแล้วอ่านภาษาไทยไม่เพี้ยน
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pancake-response-time-${view}-${since}_${until}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [view, pages, byAdmin, since, until]);
+
+  const exportDisabled = view === "branch" ? pages.length === 0 : byAdmin.length === 0;
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -111,7 +148,15 @@ export default function AdminResponseTimePage() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => load(date, true)}
+              onClick={exportCsv}
+              disabled={exportDisabled}
+              className="flex items-center gap-1.5 sm:gap-2 px-3 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs sm:text-sm font-medium transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden xs:inline">Export CSV</span>
+            </button>
+            <button
+              onClick={() => load(since, until, true)}
               disabled={loading}
               className="flex items-center gap-1.5 sm:gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-lg text-xs sm:text-sm font-medium transition-colors"
             >
@@ -124,28 +169,36 @@ export default function AdminResponseTimePage() {
 
         <div className="flex items-center gap-2 flex-wrap mb-3">
           <div className="flex gap-1 bg-gray-800 rounded-lg p-1 overflow-x-auto">
-            {QUICK_PRESETS.map((p) => {
-              const value = shiftDateStr(TODAY, p.offset);
-              return (
-                <button
-                  key={p.label}
-                  onClick={() => setDate(value)}
-                  className={`px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
-                    date === value ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white"
-                  }`}
-                >
-                  {p.label}
-                </button>
-              );
-            })}
+            {QUICK_PRESETS.map((p) => (
+              <button
+                key={p.label}
+                onClick={() => { setSince(p.since); setUntil(p.until); }}
+                className={`px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
+                  since === p.since && until === p.until ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
-          <input
-            type="date"
-            value={date}
-            max={TODAY}
-            onChange={(e) => e.target.value && setDate(e.target.value)}
-            className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-xs sm:text-sm text-gray-200 [color-scheme:dark]"
-          />
+          <div className="flex items-center gap-1.5">
+            <input
+              type="date"
+              value={since}
+              max={until}
+              onChange={(e) => e.target.value && setSince(e.target.value)}
+              className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-xs sm:text-sm text-gray-200 [color-scheme:dark]"
+            />
+            <span className="text-gray-500 text-xs">–</span>
+            <input
+              type="date"
+              value={until}
+              min={since}
+              max={TODAY}
+              onChange={(e) => e.target.value && setUntil(e.target.value)}
+              className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-xs sm:text-sm text-gray-200 [color-scheme:dark]"
+            />
+          </div>
           <div className="flex gap-1 bg-gray-800 rounded-lg p-1">
             {([
               { key: "branch" as View, label: "รายสาขา" },
@@ -186,8 +239,9 @@ export default function AdminResponseTimePage() {
 
         {!error && view === "branch" && anyIncomplete && (
           <div className="mb-3 p-2.5 rounded-lg bg-amber-950/40 border border-amber-800/60 text-amber-300 text-xs">
-            ⚠️ วันที่เลือกย้อนไกลกว่าข้อมูลที่ดึงมาได้สำหรับบางเพจ (Pancake ให้ดึงได้แค่ &ldquo;บทสนทนาล่าสุด&rdquo; ไม่ใช่ตามช่วงวันที่)
-            ตัวเลขของเพจที่ขึ้น <span className="text-amber-200 font-medium">*</span> อาจนับไม่ครบทั้งวัน
+            ⚠️ ช่วงที่เลือกย้อนไกลกว่าข้อมูลที่ดึงมาได้สำหรับบางเพจ (Pancake ให้ดึงได้แค่ &ldquo;บทสนทนาล่าสุด&rdquo; ไม่ใช่ตามช่วงวันที่ —
+            ยิ่งสาขาคุยเยอะ ยิ่งย้อนได้ไม่กี่วัน เลือก &ldquo;เดือนนี้/เดือนที่แล้ว&rdquo; อาจไม่ครบทั้งเดือน)
+            ตัวเลขของเพจที่ขึ้น <span className="text-amber-200 font-medium">*</span> อาจนับไม่ครบทั้งช่วงที่เลือก
           </div>
         )}
 

@@ -50,11 +50,16 @@ export interface PageResponseStats {
   error?: string;
 }
 
+/** ขอบเขต [since, until) ของช่วงวันปฏิทิน (Asia/Bangkok) จาก sinceDateStr ถึง untilDateStrInclusive แบบรวมวันสุดท้าย เป็น epoch ms แบบ UTC จริง */
+export function bangkokRangeMs(sinceDateStr: string, untilDateStrInclusive: string): { sinceMs: number; untilMs: number } {
+  const sinceMs = fromZonedTime(`${sinceDateStr}T00:00:00`, PANCAKE_TZ).getTime();
+  const untilMs = fromZonedTime(`${untilDateStrInclusive}T00:00:00`, PANCAKE_TZ).getTime() + 24 * 60 * 60 * 1000;
+  return { sinceMs, untilMs };
+}
+
 /** ขอบเขต [since, until) ของวันปฏิทิน (Asia/Bangkok) หนึ่งวัน เป็น epoch ms แบบ UTC จริง */
 export function bangkokDayRangeMs(dateStr: string): { sinceMs: number; untilMs: number } {
-  const sinceMs = fromZonedTime(`${dateStr}T00:00:00`, PANCAKE_TZ).getTime();
-  const untilMs = sinceMs + 24 * 60 * 60 * 1000;
-  return { sinceMs, untilMs };
+  return bangkokRangeMs(dateStr, dateStr);
 }
 
 export function todayBangkokDateStr(): string {
@@ -90,6 +95,7 @@ export async function fetchClassClinicPages(token: string): Promise<PancakePage[
 }
 
 export interface PancakeConversation {
+  id?: string;
   last_customer_interactive_at?: string;
   recent_seen_users?: Array<{ seen_at: string; fb_id?: string; fb_name?: string }>;
 }
@@ -219,18 +225,68 @@ export function computeAdminStats(
   return stats.sort((a, b) => (b.medianMinutes ?? -1) - (a.medianMinutes ?? -1));
 }
 
-/** เหมือน statsForDay แต่รวมทุกเพจเข้าด้วยกันก่อน แล้วสรุปเป็นรายแอดมินแทนรายสาขา */
-export function statsByAdminForDay(raw: RawPageConversations[], dateStr: string): AdminResponseStats[] {
-  const dayRangeMs = bangkokDayRangeMs(dateStr);
+/** เหมือน statsForDateRange แต่รวมทุกเพจเข้าด้วยกันก่อน แล้วสรุปเป็นรายแอดมินแทนรายสาขา */
+export function statsByAdminForDateRange(raw: RawPageConversations[], since: string, until: string): AdminResponseStats[] {
+  const dayRangeMs = bangkokRangeMs(since, until);
   const allConversations = raw.flatMap((r) => r.conversations);
   return computeAdminStats(allConversations, dayRangeMs);
 }
 
-interface RawPageConversations {
+/** ทางลัดสำหรับ "วันเดียว" — คงไว้เพื่อความเข้ากันได้กับเทสต์เดิม */
+export function statsByAdminForDay(raw: RawPageConversations[], dateStr: string): AdminResponseStats[] {
+  return statsByAdminForDateRange(raw, dateStr, dateStr);
+}
+
+export interface RawPageConversations {
   pageId: string;
   name: string;
   conversations: PancakeConversation[];
   error?: string;
+}
+
+export interface ResponseEvent {
+  conversationId: string;
+  pageId: string;
+  pageName: string;
+  adminId: string;
+  adminName: string;
+  gapMinutes: number;
+  /** UTC instant จริง (แปลงถูกแล้ว) ไม่ใช่ string ดิบจาก Pancake */
+  customerMessageAt: string;
+  respondedAt: string;
+}
+
+/**
+ * แตกบทสนทนาที่ "ตอบแล้ว" ของเพจหนึ่งเป็นเหตุการณ์รายบทสนทนา (ไม่กรองวันที่ ไม่ aggregate) —
+ * ใช้เก็บลง DB แบบถาวร (pancake_response_events) เพราะ Pancake ให้แค่ "บทสนทนาล่าสุด N รายการ"
+ * ถ้าไม่บันทึกตอนที่ยังอยู่ในหน้าต่างนั้น ข้อมูลจะหายไปเรื่อยๆ ตามรอบ sync ถัดไป
+ */
+export function extractResponseEvents(pageId: string, pageName: string, conversations: PancakeConversation[]): ResponseEvent[] {
+  const events: ResponseEvent[] = [];
+  for (const c of conversations) {
+    if (!c.id || !c.last_customer_interactive_at) continue;
+    const lastCustomerMs = parsePancakeTime(c.last_customer_interactive_at);
+    const seenAfter = (c.recent_seen_users || [])
+      .map((u) => ({ ms: parsePancakeTime(u.seen_at), id: u.fb_id || "", name: u.fb_name || "ไม่ทราบชื่อ" }))
+      .filter((u) => u.ms >= lastCustomerMs);
+    if (seenAfter.length === 0) continue; // ยังไม่มีคนตอบ — ไม่เก็บ (จะเก็บตอนรอบ sync ถัดไปที่ตอบแล้ว)
+
+    const first = seenAfter.reduce((a, b) => (a.ms < b.ms ? a : b));
+    const gapMin = (first.ms - lastCustomerMs) / 60_000;
+    if (gapMin < 0 || gapMin >= MAX_GAP_MINUTES) continue;
+
+    events.push({
+      conversationId: c.id,
+      pageId,
+      pageName,
+      adminId: first.id || first.name,
+      adminName: first.name,
+      gapMinutes: Math.round(gapMin * 10) / 10,
+      customerMessageAt: new Date(lastCustomerMs).toISOString(),
+      respondedAt: new Date(first.ms).toISOString(),
+    });
+  }
+  return events;
 }
 
 async function fetchPageConversations(page: PancakePage, token: string): Promise<RawPageConversations> {
@@ -268,12 +324,17 @@ export async function fetchAllPagesConversations(token: string): Promise<RawPage
   return mapWithConcurrency(pages, CONCURRENCY, (p) => fetchPageConversations(p, token));
 }
 
-/** คำนวณสถิติของทุกเพจสำหรับวันที่ระบุ (Asia/Bangkok) จากก้อนข้อมูลดิบที่ fetchAllPagesConversations ดึงมา */
-export function statsForDay(raw: RawPageConversations[], dateStr: string): PageResponseStats[] {
-  const dayRangeMs = bangkokDayRangeMs(dateStr);
+/** คำนวณสถิติของทุกเพจสำหรับช่วงวันที่ระบุ (Asia/Bangkok, รวมวันสุดท้าย) จากก้อนข้อมูลดิบที่ fetchAllPagesConversations ดึงมา */
+export function statsForDateRange(raw: RawPageConversations[], since: string, until: string): PageResponseStats[] {
+  const dayRangeMs = bangkokRangeMs(since, until);
   const stats = raw.map((r) => {
     const s = computeStats(r.pageId, r.name, r.conversations, dayRangeMs);
     return r.error ? { ...s, error: r.error } : s;
   });
   return stats.sort((a, b) => (b.medianMinutes ?? -1) - (a.medianMinutes ?? -1));
+}
+
+/** ทางลัดสำหรับ "วันเดียว" — คงไว้เพื่อความเข้ากันได้กับเทสต์เดิม */
+export function statsForDay(raw: RawPageConversations[], dateStr: string): PageResponseStats[] {
+  return statsForDateRange(raw, dateStr, dateStr);
 }

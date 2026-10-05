@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { computeStats, computeAdminStats, bangkokDayRangeMs, MAX_GAP_MINUTES, type PancakeConversation } from "../lib/pancake.ts";
+import { computeStats, computeAdminStats, extractResponseEvents, bangkokDayRangeMs, MAX_GAP_MINUTES, type PancakeConversation } from "../lib/pancake.ts";
 
 // Pancake ส่ง timestamp แบบ naive ไม่มี Z/offset ต่อท้าย (เช่น "2026-09-17T03:53:00") แต่ค่าจริงคือ
 // เวลา Bangkok local — fixture ทุกตัวในไฟล์นี้จึงตั้งใจไม่ใส่ Z ให้ตรงกับข้อมูลจริงที่ API ส่งมา
@@ -12,8 +12,10 @@ const conv = (lastCustomer: string, seenAts: string[] = []): PancakeConversation
 
 const convBy = (
   lastCustomer: string,
-  seen: Array<{ seen_at: string; fb_id: string; fb_name: string }>
+  seen: Array<{ seen_at: string; fb_id: string; fb_name: string }>,
+  id?: string
 ): PancakeConversation => ({
+  id,
   last_customer_interactive_at: lastCustomer,
   recent_seen_users: seen,
 });
@@ -165,4 +167,52 @@ test("computeAdminStats respects the same Bangkok day-range filter as computeSta
     dayRange
   );
   assert.equal(stats.length, 0);
+});
+
+test("extractResponseEvents skips conversations without an id or without a customer message", () => {
+  const events = extractResponseEvents("p1", "Test Page", [
+    convBy("2026-09-17T09:00:00", [{ seen_at: "2026-09-17T09:05:00", fb_id: "u1", fb_name: "Ammy" }]), // ไม่มี id
+    { id: "c2", recent_seen_users: [{ seen_at: "2026-09-17T09:05:00", fb_id: "u1", fb_name: "Ammy" }] }, // ไม่มี last_customer_interactive_at
+  ]);
+  assert.equal(events.length, 0);
+});
+
+test("extractResponseEvents skips conversations that have not been replied to yet", () => {
+  const events = extractResponseEvents("p1", "Test Page", [
+    convBy("2026-09-17T09:00:00", [], "c1"),
+  ]);
+  assert.equal(events.length, 0);
+});
+
+test("extractResponseEvents produces one event per conversation, crediting the fastest responder, with a real UTC instant", () => {
+  const events = extractResponseEvents("p1", "Test Page", [
+    convBy(
+      "2026-09-17T09:00:00",
+      [
+        { seen_at: "2026-09-17T09:20:00", fb_id: "u2", fb_name: "Bee" },
+        { seen_at: "2026-09-17T09:05:00", fb_id: "u1", fb_name: "Ammy" }, // เร็วสุด
+      ],
+      "c1"
+    ),
+  ]);
+  assert.equal(events.length, 1);
+  const e = events[0];
+  assert.equal(e.conversationId, "c1");
+  assert.equal(e.pageId, "p1");
+  assert.equal(e.pageName, "Test Page");
+  assert.equal(e.adminId, "u1");
+  assert.equal(e.adminName, "Ammy");
+  assert.equal(e.gapMinutes, 5);
+  // 2026-09-17T09:00:00 เวลา Bangkok = 2026-09-17T02:00:00Z
+  assert.equal(e.customerMessageAt, "2026-09-17T02:00:00.000Z");
+  assert.equal(e.respondedAt, "2026-09-17T02:05:00.000Z");
+});
+
+test("extractResponseEvents excludes gaps beyond MAX_GAP_MINUTES", () => {
+  const base = new Date(Date.UTC(2026, 0, 1));
+  const asNaive = (d: Date) => d.toISOString().slice(0, 19);
+  const events = extractResponseEvents("p1", "Test Page", [
+    convBy(asNaive(base), [{ seen_at: asNaive(new Date(base.getTime() + MAX_GAP_MINUTES * 60_000 + 60_000)), fb_id: "u1", fb_name: "Ammy" }], "c1"),
+  ]);
+  assert.equal(events.length, 0);
 });

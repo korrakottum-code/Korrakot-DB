@@ -44,12 +44,12 @@ export function createSnapshotId(input: {
   return `snapshot-${raw.replace(/[^a-zA-Z0-9|:-]/g, "-")}`;
 }
 
-function csvCell(value: unknown): string {
+export function csvCell(value: unknown): string {
   const text = value == null ? "" : String(value);
   return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
-function csvLine(values: unknown[]): string {
+export function csvLine(values: unknown[]): string {
   return values.map(csvCell).join(",");
 }
 

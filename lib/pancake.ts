@@ -5,10 +5,9 @@
  * PANCAKE_ACCESS_TOKEN เป็น session token ส่วนตัว (มีวันหมดอายุฝังอยู่ใน JWT) ไม่ใช่ API key
  * ถาวร — ถ้าหมดอายุ/ผู้ใช้ logout ที่อื่น endpoint พวกนี้จะเริ่มตอบ error ต้องขอ token ใหม่
  *
- * Pancake ไม่มี endpoint ให้ query ตามช่วงวันที่ตรงๆ — ดึงได้แค่ "บทสนทนาล่าสุด N รายการ"
- * (ยิ่ง limit สูง ยิ่งย้อนหลังได้ไกล) เลยดึงมาเป็นก้อนใหญ่ก้อนเดียว (แคชไว้ใน route) แล้วมา
- * กรองตามวันที่ (Asia/Bangkok) เอาเองฝั่งนี้ — สาขาที่คุยเยอะ ก้อนเดียวกันจะย้อนได้ไม่กี่วัน
- * ส่วนสาขาที่คุยน้อยจะย้อนได้ไกลกว่า ดู `oldestConversationAt` ต่อเพจเพื่อรู้ขอบเขตจริง
+ * Pancake ไม่มี endpoint ให้ query ตามช่วงวันที่ตรงๆ (since/until/last_conversation_id ถูกเมินหมด)
+ * แต่ `current_count` ทำงานเป็น offset — เรียงตาม updated_at ใหม่→เก่า จึงไล่เพจย้อนหลังได้ลึกตามต้องการ
+ * (ดู FetchConversationsOptions.updatedSinceMs) แล้วกรองตามวันที่ (Asia/Bangkok) เอาเองฝั่งนี้
  */
 import { fromZonedTime } from "date-fns-tz";
 
@@ -50,11 +49,16 @@ export interface PageResponseStats {
   error?: string;
 }
 
+/** ขอบเขต [since, until) ของช่วงวันปฏิทิน (Asia/Bangkok) จาก sinceDateStr ถึง untilDateStrInclusive แบบรวมวันสุดท้าย เป็น epoch ms แบบ UTC จริง */
+export function bangkokRangeMs(sinceDateStr: string, untilDateStrInclusive: string): { sinceMs: number; untilMs: number } {
+  const sinceMs = fromZonedTime(`${sinceDateStr}T00:00:00`, PANCAKE_TZ).getTime();
+  const untilMs = fromZonedTime(`${untilDateStrInclusive}T00:00:00`, PANCAKE_TZ).getTime() + 24 * 60 * 60 * 1000;
+  return { sinceMs, untilMs };
+}
+
 /** ขอบเขต [since, until) ของวันปฏิทิน (Asia/Bangkok) หนึ่งวัน เป็น epoch ms แบบ UTC จริง */
 export function bangkokDayRangeMs(dateStr: string): { sinceMs: number; untilMs: number } {
-  const sinceMs = fromZonedTime(`${dateStr}T00:00:00`, PANCAKE_TZ).getTime();
-  const untilMs = sinceMs + 24 * 60 * 60 * 1000;
-  return { sinceMs, untilMs };
+  return bangkokRangeMs(dateStr, dateStr);
 }
 
 export function todayBangkokDateStr(): string {
@@ -90,6 +94,8 @@ export async function fetchClassClinicPages(token: string): Promise<PancakePage[
 }
 
 export interface PancakeConversation {
+  id?: string;
+  updated_at?: string;
   last_customer_interactive_at?: string;
   recent_seen_users?: Array<{ seen_at: string; fb_id?: string; fb_name?: string }>;
 }
@@ -219,26 +225,107 @@ export function computeAdminStats(
   return stats.sort((a, b) => (b.medianMinutes ?? -1) - (a.medianMinutes ?? -1));
 }
 
-/** เหมือน statsForDay แต่รวมทุกเพจเข้าด้วยกันก่อน แล้วสรุปเป็นรายแอดมินแทนรายสาขา */
-export function statsByAdminForDay(raw: RawPageConversations[], dateStr: string): AdminResponseStats[] {
-  const dayRangeMs = bangkokDayRangeMs(dateStr);
+/** เหมือน statsForDateRange แต่รวมทุกเพจเข้าด้วยกันก่อน แล้วสรุปเป็นรายแอดมินแทนรายสาขา */
+export function statsByAdminForDateRange(raw: RawPageConversations[], since: string, until: string): AdminResponseStats[] {
+  const dayRangeMs = bangkokRangeMs(since, until);
   const allConversations = raw.flatMap((r) => r.conversations);
   return computeAdminStats(allConversations, dayRangeMs);
 }
 
-interface RawPageConversations {
+/** ทางลัดสำหรับ "วันเดียว" — คงไว้เพื่อความเข้ากันได้กับเทสต์เดิม */
+export function statsByAdminForDay(raw: RawPageConversations[], dateStr: string): AdminResponseStats[] {
+  return statsByAdminForDateRange(raw, dateStr, dateStr);
+}
+
+export interface RawPageConversations {
   pageId: string;
   name: string;
   conversations: PancakeConversation[];
   error?: string;
 }
 
-async function fetchPageConversations(page: PancakePage, token: string): Promise<RawPageConversations> {
+export interface ResponseEvent {
+  conversationId: string;
+  pageId: string;
+  pageName: string;
+  adminId: string;
+  adminName: string;
+  gapMinutes: number;
+  /** UTC instant จริง (แปลงถูกแล้ว) ไม่ใช่ string ดิบจาก Pancake */
+  customerMessageAt: string;
+  respondedAt: string;
+}
+
+/**
+ * แตกบทสนทนาที่ "ตอบแล้ว" ของเพจหนึ่งเป็นเหตุการณ์รายบทสนทนา (ไม่กรองวันที่ ไม่ aggregate) —
+ * ใช้เก็บลง DB แบบถาวร (pancake_response_events) เพราะ Pancake ให้แค่ "บทสนทนาล่าสุด N รายการ"
+ * ถ้าไม่บันทึกตอนที่ยังอยู่ในหน้าต่างนั้น ข้อมูลจะหายไปเรื่อยๆ ตามรอบ sync ถัดไป
+ */
+export function extractResponseEvents(pageId: string, pageName: string, conversations: PancakeConversation[]): ResponseEvent[] {
+  const events: ResponseEvent[] = [];
+  for (const c of conversations) {
+    if (!c.id || !c.last_customer_interactive_at) continue;
+    const lastCustomerMs = parsePancakeTime(c.last_customer_interactive_at);
+    const seenAfter = (c.recent_seen_users || [])
+      .map((u) => ({ ms: parsePancakeTime(u.seen_at), id: u.fb_id || "", name: u.fb_name || "ไม่ทราบชื่อ" }))
+      .filter((u) => u.ms >= lastCustomerMs);
+    if (seenAfter.length === 0) continue; // ยังไม่มีคนตอบ — ไม่เก็บ (จะเก็บตอนรอบ sync ถัดไปที่ตอบแล้ว)
+
+    const first = seenAfter.reduce((a, b) => (a.ms < b.ms ? a : b));
+    const gapMin = (first.ms - lastCustomerMs) / 60_000;
+    if (gapMin < 0 || gapMin >= MAX_GAP_MINUTES) continue;
+
+    events.push({
+      conversationId: c.id,
+      pageId,
+      pageName,
+      adminId: first.id || first.name,
+      adminName: first.name,
+      gapMinutes: Math.round(gapMin * 10) / 10,
+      customerMessageAt: new Date(lastCustomerMs).toISOString(),
+      respondedAt: new Date(first.ms).toISOString(),
+    });
+  }
+  return events;
+}
+
+/** เพดานจำนวนหน้า (หน้าละ FETCH_LIMIT) ต่อเพจ — กัน loop ไม่จบถ้า API ตอบผิดปกติ (300 × 200 = 60,000 บทสนทนา) */
+const MAX_PAGES_PER_PAGE = 200;
+
+export interface FetchConversationsOptions {
+  /**
+   * ถ้าระบุ จะไล่ดึงย้อนหลังต่อเนื่อง (ใช้ current_count เป็น offset — เรียงตาม updated_at ใหม่→เก่า)
+   * จนบทสนทนาที่เก่าสุดในหน้าถูกอัปเดตก่อนเวลานี้ แทนที่จะดึงแค่ "ล่าสุด FETCH_LIMIT รายการ" หน้าเดียว
+   */
+  updatedSinceMs?: number;
+}
+
+async function fetchPageConversations(page: PancakePage, token: string, opts: FetchConversationsOptions = {}): Promise<RawPageConversations> {
   try {
-    const data = (await pancakeGet(`pages/${page.id}/conversations?limit=${FETCH_LIMIT}`, token)) as {
-      conversations?: PancakeConversation[];
-    };
-    return { pageId: page.id, name: page.name, conversations: data.conversations || [] };
+    const byId = new Map<string, PancakeConversation>();
+    const noId: PancakeConversation[] = [];
+    let offset = 0;
+    for (let i = 0; i < MAX_PAGES_PER_PAGE; i++) {
+      const path = opts.updatedSinceMs === undefined
+        ? `pages/${page.id}/conversations?limit=${FETCH_LIMIT}`
+        : `pages/${page.id}/conversations?limit=${FETCH_LIMIT}&current_count=${offset}`;
+      const data = (await pancakeGet(path, token)) as { conversations?: PancakeConversation[] };
+      const batch = data.conversations || [];
+      if (batch.length === 0) break;
+      for (const c of batch) {
+        if (c.id) byId.set(c.id, c);
+        else noId.push(c);
+      }
+      offset += batch.length;
+      if (opts.updatedSinceMs === undefined) break;
+      const oldestUpdated = batch.reduce((min, c) => {
+        if (!c.updated_at) return min;
+        const t = parsePancakeTime(c.updated_at);
+        return t < min ? t : min;
+      }, Number.POSITIVE_INFINITY);
+      if (oldestUpdated < opts.updatedSinceMs) break;
+    }
+    return { pageId: page.id, name: page.name, conversations: [...byId.values(), ...noId] };
   } catch (err) {
     return { pageId: page.id, name: page.name, conversations: [], error: err instanceof Error ? err.message : "unknown error" };
   }
@@ -263,17 +350,22 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
  * ดึงบทสนทนาล่าสุดของทุกเพจ Class Clinic/Class Go เป็นก้อนดิบ — ไม่กรองวันที่
  * ให้ผู้เรียก (route) แคชก้อนนี้ไว้ แล้วเรียก statsForDay ซ้ำได้หลายวันที่โดยไม่ต้องยิง Pancake ใหม่
  */
-export async function fetchAllPagesConversations(token: string): Promise<RawPageConversations[]> {
+export async function fetchAllPagesConversations(token: string, opts: FetchConversationsOptions = {}): Promise<RawPageConversations[]> {
   const pages = await fetchClassClinicPages(token);
-  return mapWithConcurrency(pages, CONCURRENCY, (p) => fetchPageConversations(p, token));
+  return mapWithConcurrency(pages, CONCURRENCY, (p) => fetchPageConversations(p, token, opts));
 }
 
-/** คำนวณสถิติของทุกเพจสำหรับวันที่ระบุ (Asia/Bangkok) จากก้อนข้อมูลดิบที่ fetchAllPagesConversations ดึงมา */
-export function statsForDay(raw: RawPageConversations[], dateStr: string): PageResponseStats[] {
-  const dayRangeMs = bangkokDayRangeMs(dateStr);
+/** คำนวณสถิติของทุกเพจสำหรับช่วงวันที่ระบุ (Asia/Bangkok, รวมวันสุดท้าย) จากก้อนข้อมูลดิบที่ fetchAllPagesConversations ดึงมา */
+export function statsForDateRange(raw: RawPageConversations[], since: string, until: string): PageResponseStats[] {
+  const dayRangeMs = bangkokRangeMs(since, until);
   const stats = raw.map((r) => {
     const s = computeStats(r.pageId, r.name, r.conversations, dayRangeMs);
     return r.error ? { ...s, error: r.error } : s;
   });
   return stats.sort((a, b) => (b.medianMinutes ?? -1) - (a.medianMinutes ?? -1));
+}
+
+/** ทางลัดสำหรับ "วันเดียว" — คงไว้เพื่อความเข้ากันได้กับเทสต์เดิม */
+export function statsForDay(raw: RawPageConversations[], dateStr: string): PageResponseStats[] {
+  return statsForDateRange(raw, dateStr, dateStr);
 }

@@ -54,9 +54,15 @@ export interface PancakeSyncResult {
   eventsUpserted: number;
 }
 
-/** ดึงบทสนทนาล่าสุดของทุกเพจ Class Clinic/Class Go แล้วเก็บเหตุการณ์ตอบแชทลง DB ถาวร — เรียกจาก cron route และ script */
-export async function syncAllPancakeEvents(token: string): Promise<PancakeSyncResult> {
-  const raw = await fetchAllPagesConversations(token);
+/** ย้อนกลับไปกี่วันตอน sync ปกติ (cron/ปุ่มซิงก์) — เผื่อทับซ้อนกับรอบก่อน การ upsert ซ้ำไม่เสียหาย */
+export const DEFAULT_SYNC_LOOKBACK_DAYS = 2;
+
+/**
+ * ดึงบทสนทนาของทุกเพจ Class Clinic/Class Go ย้อนหลัง `lookbackDays` วัน (ไล่ทีละ 300 ด้วย current_count)
+ * แล้วเก็บเหตุการณ์ตอบแชทลง DB ถาวร — เรียกจาก cron route, ปุ่มซิงก์ และ script backfill
+ */
+export async function syncAllPancakeEvents(token: string, lookbackDays = DEFAULT_SYNC_LOOKBACK_DAYS): Promise<PancakeSyncResult> {
+  const raw = await fetchAllPagesConversations(token, { updatedSinceMs: Date.now() - lookbackDays * 86_400_000 });
 
   const allEvents: ResponseEvent[] = [];
   const pagesFailed: PancakeSyncResult["pagesFailed"] = [];

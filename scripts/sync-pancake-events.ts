@@ -3,12 +3,13 @@
  * Cron เรียกอัตโนมัติทุกวัน) — ใช้ทดสอบ หรือรันเสริมระหว่างวันถ้าอยากได้ข้อมูลถี่กว่ารอบ cron
  *
  * รันได้จากเครื่อง local (อ่าน PANCAKE_ACCESS_TOKEN, POSTGRES_URL จาก .env.local อัตโนมัติ):
- *   npm run sync-pancake-events
+ *   npm run sync-pancake-events            # ย้อน 2 วัน (เหมือน cron)
+ *   npm run sync-pancake-events -- --days 45   # backfill ย้อนหลัง 45 วัน (ไล่ดึงทีละ 300 ต่อเพจ ใช้เวลาหลายนาทีสำหรับเพจที่คุยเยอะ)
  */
 import { loadEnvConfig } from "@next/env";
 loadEnvConfig(process.cwd());
 
-import { syncAllPancakeEvents } from "../lib/pancake-store";
+import { syncAllPancakeEvents, DEFAULT_SYNC_LOOKBACK_DAYS } from "../lib/pancake-store";
 
 async function main() {
   const token = process.env.PANCAKE_ACCESS_TOKEN;
@@ -21,8 +22,15 @@ async function main() {
     process.exit(1);
   }
 
-  console.log("Syncing Pancake response events...");
-  const result = await syncAllPancakeEvents(token);
+  const daysArg = process.argv.indexOf("--days");
+  const days = daysArg >= 0 ? Number(process.argv[daysArg + 1]) : DEFAULT_SYNC_LOOKBACK_DAYS;
+  if (!Number.isFinite(days) || days <= 0) {
+    console.error("--days ต้องเป็นตัวเลขมากกว่า 0");
+    process.exit(1);
+  }
+
+  console.log(`Syncing Pancake response events (last ${days} days)...`);
+  const result = await syncAllPancakeEvents(token, days);
   console.log(`pages ok: ${result.pagesOk}, failed: ${result.pagesFailed.length}, events upserted: ${result.eventsUpserted}`);
   for (const f of result.pagesFailed) {
     console.warn(`  failed: ${f.name} (${f.pageId}): ${f.message}`);

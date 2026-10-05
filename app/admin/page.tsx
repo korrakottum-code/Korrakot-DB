@@ -60,6 +60,7 @@ const QUICK_PRESETS: { label: string; since: string; until: string }[] = [
   { label: "2 วันก่อน", since: shiftDateStr(TODAY, -2), until: shiftDateStr(TODAY, -2) },
   { label: "3 วันก่อน", since: shiftDateStr(TODAY, -3), until: shiftDateStr(TODAY, -3) },
   { label: "7 วันก่อน", since: shiftDateStr(TODAY, -7), until: shiftDateStr(TODAY, -7) },
+  { label: "7 วันล่าสุด", since: shiftDateStr(TODAY, -6), until: TODAY },
   { label: "เดือนนี้", since: THIS_MONTH_START, until: TODAY },
   { label: "เดือนที่แล้ว", since: LAST_MONTH_START, until: LAST_MONTH_END },
 ];

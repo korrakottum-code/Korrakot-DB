@@ -43,7 +43,7 @@ function addDaysUTC(dateStr: string, days: number): string {
   return formatDateUTC(new Date(parseDateUTC(dateStr).getTime() + days * 86_400_000));
 }
 
-function enumerateDates(since: string, until: string): string[] {
+export function enumerateDates(since: string, until: string): string[] {
   const dates: string[] = [];
   let cur = parseDateUTC(since).getTime();
   const end = parseDateUTC(until).getTime();

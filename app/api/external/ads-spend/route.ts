@@ -7,15 +7,16 @@ import { dedupeAccounts, dedupeInsights } from "@/lib/dedupe";
 import { deleteServerCache, getServerCache } from "@/lib/server-cache";
 import { getEffectiveSettlingWindow, logSyncError, readInsightRows, recentWindowState, splitDateRange } from "@/lib/insights-store";
 import { syncRange } from "@/lib/insights-sync";
-import { sumReportingRows } from "@/lib/reporting";
+import { sumReportingRows, sumSpendByDay } from "@/lib/reporting";
 
 /**
  * API สำหรับระบบภายนอก (เช่น Qlass) ดึงยอดใช้จ่ายโฆษณารวมทุกบัญชี ไปคำนวณ CPO เอง
  * — คนละ auth กับหน้าเว็บภายใน ดู lib/external-auth.ts
  *
- * GET /api/external/ads-spend?since=2026-08-01&until=2026-08-31
- * Header: Authorization: Bearer <EXTERNAL_API_KEY>
+ * GET /api/external/ads-spend?since=2026-08-01&until=2026-08-31[&groupBy=day]
+ * Header: Authorization: Bearer <EXTERNAL_API_KEY | EXTERNAL_API_KEY_QLASS>
  * → { since, until, spend, currency: "THB", asOf }
+ *   + groupBy=day: daily: [{ day: "YYYY-MM-DD", spend }] (เวลาไทย, ข้ามวันที่ไม่มียอด)
  *
  * ความสด: เสิร์ฟจาก Postgres เสมอ แล้ว sync กับ Meta เบื้องหลังไม่เกินชั่วโมงละครั้ง
  * (คนละรอบกับหน้าเว็บภายในที่ใช้ 10 นาที — Qlass ขอแค่ "ทุกชั่วโมงก็พอ" เอง
@@ -50,6 +51,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: validation.error }, { status: 400 });
   }
   const { since, until } = validation.value;
+
+  const groupBy = req.nextUrl.searchParams.get("groupBy");
+  if (groupBy !== null && groupBy !== "day") {
+    return NextResponse.json({ error: "groupBy รองรับเฉพาะ day" }, { status: 400 });
+  }
 
   const tokens = [
     process.env.META_ACCESS_TOKEN,
@@ -99,16 +105,17 @@ export async function GET(req: NextRequest) {
         tokens.map((token) => syncRange(token, accountIds, since, until, asOf, { skipRecent: deferSync, settlingWindowDays }))
       );
       const rows = dedupeInsights(await readInsightRows(accountIds, since, until));
-      return sumReportingRows(rows);
+      return { totals: sumReportingRows(rows), daily: sumSpendByDay(rows) };
     }, false, { staleTtlMs: CACHE_STALE_TTL_MS });
 
     return NextResponse.json(
       {
         since,
         until,
-        spend: Math.round(cached.value.spend),
+        spend: Math.round(cached.value.totals.spend),
         currency: "THB",
         asOf: asOf.toISOString(),
+        ...(groupBy === "day" ? { daily: cached.value.daily } : {}),
       },
       { headers: { "Cache-Control": "private, no-store" } }
     );

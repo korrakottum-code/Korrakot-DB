@@ -25,6 +25,31 @@ export function readExternalApiKey(env: Record<string, string | undefined> = pro
   return key.length >= MIN_KEY_LENGTH ? key : null;
 }
 
+// รหัสแยกรายผู้เรียก — ให้ระบบใหม่มีรหัสของตัวเอง โดย EXTERNAL_API_KEY เดิมที่ระบบอื่นใช้อยู่ไม่ต้องเปลี่ยน
+// เพิกถอนรายตัวได้แค่ลบตัวแปรนั้น (ยาวไม่ถึง MIN_KEY_LENGTH = ถือว่าไม่ได้ตั้งค่า เหมือน fail-closed ของตัวหลัก)
+const PER_CONSUMER_KEY_NAMES = ["EXTERNAL_API_KEY_QLASS"] as const;
+
+export function readExternalApiKeys(env: Record<string, string | undefined> = process.env): string[] {
+  const keys: string[] = [];
+  const primary = readExternalApiKey(env);
+  if (primary) keys.push(primary);
+  for (const name of PER_CONSUMER_KEY_NAMES) {
+    const value = env[name] || "";
+    if (value.length >= MIN_KEY_LENGTH && !keys.includes(value)) keys.push(value);
+  }
+  return keys;
+}
+
+// เทียบกับทุกรหัสเสมอ ไม่หยุดเมื่อเจอตัวแรกที่ตรง — เวลาตอบไม่บอกว่าตรงกับรหัสลำดับไหน
+export function verifyAnyExternalApiKey(input: string | null, expectedKeys: string[]): boolean {
+  if (!input || expectedKeys.length === 0) return false;
+  let matched = false;
+  for (const expected of expectedKeys) {
+    if (secureEqual(input, expected)) matched = true;
+  }
+  return matched;
+}
+
 export function verifyExternalApiKey(input: string | null, expected: string): boolean {
   if (!input) return false;
   return secureEqual(input, expected);
@@ -37,8 +62,8 @@ function extractBearerToken(request: NextRequest): string | null {
 }
 
 export function requireExternalApiAuth(request: NextRequest): NextResponse | null {
-  const key = readExternalApiKey();
-  if (!key) {
+  const keys = readExternalApiKeys();
+  if (keys.length === 0) {
     return NextResponse.json(
       { error: "External API ยังไม่ได้ตั้งค่า" },
       { status: 503, headers: { "Cache-Control": "private, no-store" } }
@@ -46,7 +71,7 @@ export function requireExternalApiAuth(request: NextRequest): NextResponse | nul
   }
 
   const token = extractBearerToken(request);
-  if (!verifyExternalApiKey(token, key)) {
+  if (!verifyAnyExternalApiKey(token, keys)) {
     return NextResponse.json(
       { error: "Unauthorized" },
       { status: 401, headers: { "Cache-Control": "private, no-store" } }

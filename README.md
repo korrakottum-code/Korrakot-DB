@@ -172,6 +172,7 @@ Header: Authorization: Bearer <EXTERNAL_API_KEY>
 
 - คนละ auth กับ Login หน้าเว็บทีมงานโดยสิ้นเชิง (`EXTERNAL_API_KEY` ไม่ใช่ `INTERNAL_DASHBOARD_PASSWORD`) — เพิกถอนสิทธิ์ระบบภายนอกได้โดยไม่กระทบทีม
 - ตั้งค่าใน `.env.local`/Vercel: `EXTERNAL_API_KEY=` (อย่างน้อย 32 ตัวอักษร) สร้างด้วย `openssl rand -base64 48` — ถ้ายังไม่ตั้งค่า API จะปิดรับ request ทั้งหมด (fail closed)
+- **รหัสแยกรายผู้เรียก (ไม่บังคับ):** `EXTERNAL_API_KEY_QLASS=` (อย่างน้อย 32 ตัวอักษร สร้างแบบเดียวกัน) ให้ Qlass ใช้รหัสของตัวเอง โดย `EXTERNAL_API_KEY` เดิมที่ระบบอื่นใช้อยู่ไม่ต้องเปลี่ยน — ทั้งสองรหัสผ่านได้ทั้ง `ads-spend` และ `branch-metrics` เพิกถอนของ Qlass ได้โดยลบตัวแปรนี้ ไม่กระทบระบบอื่น
 - ความสดของข้อมูล: เสิร์ฟจาก Postgres เสมอ แล้ว sync กับ Meta เบื้องหลังไม่เกินชั่วโมงละครั้ง (ตามที่ขอ — เรียกถี่แค่ไหนก็ไม่ยิง Meta ซ้ำถี่กว่านั้น)
 - `since`/`until` ต้องระบุคู่กันเสมอ รูปแบบ `YYYY-MM-DD` ไม่เกิน 370 วัน — ไม่มี preset ให้เดา (ต่างจาก `/api/insights` ที่ใช้ในหน้าเว็บ)
 - error ของงาน sync เบื้องหลังบันทึกลง log เดียวกับหน้าเว็บ ดูได้ที่ `/api/sync-errors`

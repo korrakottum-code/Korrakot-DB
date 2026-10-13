@@ -258,18 +258,6 @@ export function sumReportingRows(rows: Array<Pick<AdInsight, "spend" | "impressi
   };
 }
 
-/** ยอดใช้จ่ายรายวัน (วันตามที่เก็บใน ad_daily_metrics = เวลาไทย) เรียงตามวัน ข้ามวันที่ไม่มียอด ปัดทศนิยม 2 ตำแหน่ง */
-export function sumSpendByDay(rows: Array<{ date: string; spend: number }>): Array<{ day: string; spend: number }> {
-  const byDay = new Map<string, number>();
-  for (const row of rows) {
-    if (!Number.isFinite(row.spend) || row.spend === 0) continue;
-    byDay.set(row.date, (byDay.get(row.date) ?? 0) + row.spend);
-  }
-  return [...byDay.entries()]
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([day, spend]) => ({ day, spend: Math.round(spend * 100) / 100 }));
-}
-
 export function aggregateDaily(rows: AdInsight[]): DailyReportingRow[] {
   const byDate = new Map<string, AdInsight[]>();
   for (const row of rows) {

@@ -3,11 +3,10 @@ import { requireExternalApiAuth } from "@/lib/external-auth";
 import { consumeApiRateLimit } from "@/lib/rate-limit";
 import { validateExternalDateRangeQuery } from "@/lib/request-validation";
 import { fetchAccounts } from "@/lib/meta";
-import { dedupeAccounts, dedupeInsights } from "@/lib/dedupe";
+import { dedupeAccounts } from "@/lib/dedupe";
 import { deleteServerCache, getServerCache } from "@/lib/server-cache";
-import { getEffectiveSettlingWindow, logSyncError, readInsightRows, recentWindowState, splitDateRange } from "@/lib/insights-store";
+import { getEffectiveSettlingWindow, logSyncError, readDailySpend, recentWindowState, splitDateRange } from "@/lib/insights-store";
 import { syncRange } from "@/lib/insights-sync";
-import { sumReportingRows, sumSpendByDay } from "@/lib/reporting";
 
 /**
  * API สำหรับระบบภายนอก (เช่น Qlass) ดึงยอดใช้จ่ายโฆษณารวมทุกบัญชี ไปคำนวณ CPO เอง
@@ -104,18 +103,19 @@ export async function GET(req: NextRequest) {
       await Promise.all(
         tokens.map((token) => syncRange(token, accountIds, since, until, asOf, { skipRecent: deferSync, settlingWindowDays }))
       );
-      const rows = dedupeInsights(await readInsightRows(accountIds, since, until));
-      return { totals: sumReportingRows(rows), daily: sumSpendByDay(rows) };
+      return readDailySpend(accountIds, since, until);
     }, false, { staleTtlMs: CACHE_STALE_TTL_MS });
 
     return NextResponse.json(
       {
         since,
         until,
-        spend: Math.round(cached.value.totals.spend),
+        spend: Math.round(cached.value.reduce((sum, d) => sum + d.spend, 0)),
         currency: "THB",
         asOf: asOf.toISOString(),
-        ...(groupBy === "day" ? { daily: cached.value.daily } : {}),
+        ...(groupBy === "day"
+          ? { daily: cached.value.map((d) => ({ day: d.day, spend: Math.round(d.spend * 100) / 100 })) }
+          : {}),
       },
       { headers: { "Cache-Control": "private, no-store" } }
     );

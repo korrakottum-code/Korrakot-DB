@@ -9,7 +9,6 @@ import {
   getReportingPeriods,
   objectiveMetric,
   sumReportingRows,
-  sumSpendByDay,
 } from "../lib/reporting.ts";
 
 const row = (date: string, values: Partial<{ spend: number; impressions: number; reach: number; clicks: number; inbox: number; depth3: number; leads: number }> = {}) => ({
@@ -129,19 +128,4 @@ test("pctDepth3 measures how many inbox conversations actually reach message 3",
   ]);
   assert.equal(totals.depth3, 7);
   assert.equal(totals.pctDepth3, 7 / 15);
-});
-
-test("sumSpendByDay sums spend per day across ads, sorts by day, skips zero days and rounds to 2 decimals", () => {
-  const daily = sumSpendByDay([
-    { date: "2026-10-02", spend: 100.004 },
-    { date: "2026-10-01", spend: 50.5 },
-    { date: "2026-10-02", spend: 0.001 },
-    { date: "2026-10-03", spend: 0 },
-    { date: "2026-10-01", spend: 49.5 },
-  ]);
-  assert.deepEqual(daily, [
-    { day: "2026-10-01", spend: 100 },
-    { day: "2026-10-02", spend: 100.01 },
-  ]);
-  assert.deepEqual(sumSpendByDay([]), []);
 });

@@ -42,12 +42,32 @@ function adNamesFromRows(rows: DailyMetricRow[]): AdNameRow[] {
   return [...byId.values()];
 }
 
+// Meta ตอบ "Service temporarily unavailable"/"unknown error" ถ้าขอรายแอดรายวันช่วงยาวหลายเดือนในครั้งเดียว
+// บัญชีที่พังไม่ถูก mark แล้วทุก request ถัดไปก็ขอช่วงยาวเดิมซ้ำ วนพังไม่จบ — จึงแบ่งดึงทีละไม่เกินนี้
+export const FINAL_SYNC_CHUNK_DAYS = 31;
+
+/** แบ่ง [since, until] (YYYY-MM-DD รวมวันสุดท้าย) เป็นช่วงต่อกันยาวไม่เกิน chunkDays วัน */
+export function chunkDateRange(since: string, until: string, chunkDays: number): Array<{ since: string; until: string }> {
+  const chunks: Array<{ since: string; until: string }> = [];
+  const dayMs = 86_400_000;
+  const endMs = Date.parse(`${until}T00:00:00Z`);
+  for (let startMs = Date.parse(`${since}T00:00:00Z`); startMs <= endMs; startMs += chunkDays * dayMs) {
+    const chunkEndMs = Math.min(startMs + (chunkDays - 1) * dayMs, endMs);
+    chunks.push({
+      since: new Date(startMs).toISOString().slice(0, 10),
+      until: new Date(chunkEndMs).toISOString().slice(0, 10),
+    });
+  }
+  return chunks;
+}
+
 /**
  * Fetches only the gaps in `finalDates` that aren't yet in the store (across
- * all given accounts, unioned into one bounding range per token — see
- * lib/insights-store.ts's header comment for why "final" days are safe to
- * cache forever). Shared by the live insights API route and the standalone
- * backfill script (scripts/backfill-insights.ts) so both stay in sync.
+ * all given accounts, unioned into one bounding range per token, fetched in
+ * FINAL_SYNC_CHUNK_DAYS chunks — see lib/insights-store.ts's header comment for
+ * why "final" days are safe to cache forever). Shared by the live insights API
+ * route and the standalone backfill script (scripts/backfill-insights.ts) so
+ * both stay in sync.
  */
 export async function syncFinalDates(
   token: string,
@@ -63,24 +83,35 @@ export async function syncFinalDates(
   const gapSince = gapRanges[0].since;
   const gapUntil = gapRanges[gapRanges.length - 1].until;
 
-  const { rows, accounts, failures } = await fetchDailyMetrics(token, gapSince, gapUntil);
-  const gapDates = finalDates.filter((d) => d >= gapSince && d <= gapUntil);
-  const swept = sweptAccountIds(accounts, failures);
-  // การ fetch รอบสุดท้ายตอนวันพ้นหน้าต่าง = เซนเซอร์ที่ขอบของระบบหน้าต่างอัตโนมัติ:
-  // ถ้าตัวเลขขอบยังขยับบ่อย สถิติจะดันหน้าต่างให้กว้างกลับเอง (ดู getEffectiveSettlingWindow)
-  try {
-    await recordSyncChangeStats(rows, swept, gapDates, new Date());
-  } catch (err) {
-    console.warn("[sync-change-stats] failed:", err instanceof Error ? err.message : err);
-  }
-  await upsertDailyMetrics(rows);
-  await upsertAdNames(adNamesFromRows(rows));
-  // mark เฉพาะบัญชีที่ token นี้กวาดสำเร็จจริง — บัญชีที่พังหรืออยู่กับ token อื่นยังถือว่าไม่ sync
-  await Promise.all(swept.map((id) => markSynced(id, gapDates)));
+  const allFailures: FetchFailure[] = [];
+  for (const chunk of chunkDateRange(gapSince, gapUntil, FINAL_SYNC_CHUNK_DAYS)) {
+    const { rows, accounts, failures } = await fetchDailyMetrics(token, chunk.since, chunk.until);
+    const chunkDates = finalDates.filter((d) => d >= chunk.since && d <= chunk.until);
+    const swept = sweptAccountIds(accounts, failures);
+    // การ fetch รอบสุดท้ายตอนวันพ้นหน้าต่าง = เซนเซอร์ที่ขอบของระบบหน้าต่างอัตโนมัติ:
+    // ถ้าตัวเลขขอบยังขยับบ่อย สถิติจะดันหน้าต่างให้กว้างกลับเอง (ดู getEffectiveSettlingWindow)
+    try {
+      await recordSyncChangeStats(rows, swept, chunkDates, new Date());
+    } catch (err) {
+      console.warn("[sync-change-stats] failed:", err instanceof Error ? err.message : err);
+    }
+    await upsertDailyMetrics(rows);
+    await upsertAdNames(adNamesFromRows(rows));
+    // mark เฉพาะบัญชีที่ token นี้กวาดสำเร็จจริง — บัญชีที่พังหรืออยู่กับ token อื่นยังถือว่าไม่ sync
+    await Promise.all(swept.map((id) => markSynced(id, chunkDates)));
 
-  // เก็บ failure ลง log ถาวรเสมอ — ตอนรันเบื้องหลังไม่มีหน้าจอให้แสดง ถ้าไม่เก็บจะหายเงียบ
-  await logSyncFailures(`final-sync ${gapSince}..${gapUntil}`, failures);
-  return failures;
+    // เก็บ failure ลง log ถาวรเสมอ — ตอนรันเบื้องหลังไม่มีหน้าจอให้แสดง ถ้าไม่เก็บจะหายเงียบ
+    await logSyncFailures(`final-sync ${chunk.since}..${chunk.until}`, failures);
+    allFailures.push(...failures);
+  }
+  // บัญชีเดียวกันพังได้หลายช่วง — คืนครั้งเดียวต่อบัญชี ไม่ให้หน้าเว็บขึ้นคำเตือนซ้ำ (log ถาวรด้านบนยังเก็บครบทุกช่วง)
+  const seen = new Set<string>();
+  return allFailures.filter((f) => {
+    const key = f.accountId || `${f.scope}:${f.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**

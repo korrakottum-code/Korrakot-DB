@@ -558,6 +558,21 @@ export async function upsertAdNames(rows: AdNameRow[]): Promise<void> {
   }
 }
 
+/** ยอดใช้จ่ายรวมต่อวัน รวมใน Postgres เลย ไม่ต้องดึงแถวรายแอด (หลักแสนแถวต่อปี) ออกมารวมในโค้ด — PK (account_id, ad_id, date) จึงไม่มีแถวซ้ำ ข้ามวันที่ยอดเป็น 0 */
+export async function readDailySpend(accountIds: string[], since: string, until: string): Promise<Array<{ day: string; spend: number }>> {
+  if (accountIds.length === 0) return [];
+  const { rows } = await getPool().query<{ day: string; spend: number }>(
+    `select date::text as day, sum(spend) as spend
+     from ad_daily_metrics
+     where account_id = any($1::text[]) and date between $2 and $3
+     group by date
+     having sum(spend) <> 0
+     order by date`,
+    [accountIds, since, until]
+  );
+  return rows.map((r) => ({ day: r.day, spend: Number(r.spend) }));
+}
+
 /** Reads stored metrics for the range, joined with the current ad name — callers re-derive branch/program via parseAdName(row.adName). */
 export async function readInsightRows(accountIds: string[], since: string, until: string): Promise<StoredInsightRow[]> {
   if (accountIds.length === 0) return [];

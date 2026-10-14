@@ -104,7 +104,14 @@ export async function syncFinalDates(
     await logSyncFailures(`final-sync ${chunk.since}..${chunk.until}`, failures);
     allFailures.push(...failures);
   }
-  return allFailures;
+  // บัญชีเดียวกันพังได้หลายช่วง — คืนครั้งเดียวต่อบัญชี ไม่ให้หน้าเว็บขึ้นคำเตือนซ้ำ (log ถาวรด้านบนยังเก็บครบทุกช่วง)
+  const seen = new Set<string>();
+  return allFailures.filter((f) => {
+    const key = f.accountId || `${f.scope}:${f.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**

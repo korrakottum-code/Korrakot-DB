@@ -23,7 +23,7 @@ test("ชื่อตรงกติกาอ่านครบทุกส่�
   const p = parseAdName("CLS PW01-0228");
   assert.equal(p.status, "ok");
   assert.equal(p.isParsed, true);
-  assert.equal(p.isCanonicalName, true);
+  assert.equal(p.usesObsoleteBranchCode, false);
   assert.equal(p.branch, "เพจหลัก");
   assert.equal(p.asset, "โปรโมชั่น");
   assert.equal(p.program, "กำจัดขน");
@@ -115,12 +115,25 @@ test("ชื่ออิสระที่ไม่เคยลงรหัส�
   }
 });
 
-test("ชื่อที่มีคำนำหน้ายังอ่านโปรแกรมได้ แต่ไม่นับว่าตรงกติกา", () => {
+test("ข้อความโน้ตข้างหน้าไม่ถือว่าผิด อ่านเฉพาะรหัสท้ายชื่อ", () => {
   const p = parseAdName("Acne – 30Aug NMA PA00-0026");
   assert.equal(p.status, "ok");
   assert.equal(p.program, "สิว");
   assert.equal(p.branch, "โคราช");
-  assert.equal(p.isCanonicalName, false);
+  // โน้ตกันลืมข้างหน้าเป็นเรื่องตั้งใจ ไม่ใช่ชื่อผิด
+  assert.equal(p.usesObsoleteBranchCode, false);
+});
+
+test("โน้ตข้างหน้าที่มีรหัสสาขาปนอยู่ ต้องไม่ทำให้อ่านสาขาผิด", () => {
+  // สาขาจริงคือ MKM ที่อยู่ท้าย ไม่ใช่ BRM ที่อยู่ในโน้ต
+  const p = parseAdName("30up BRM MKM PM00-0032");
+  assert.equal(p.branchCode, "MKM");
+  assert.equal(p.branch, "มหาสารคาม");
+  assert.equal(p.status, "ok");
+});
+
+test("หมายเหตุต่อท้ายไม่ทำให้หารหัสสาขาไม่เจอ", () => {
+  assert.equal(parseAdName("HR Class - บัญชี").program, "ทรัพยากรบุคคล");
 });
 
 test("ความถูกต้องของรหัสสาขาวัดจากตารางตั้งค่า ไม่ได้บังคับ 3 ตัวอักษรตายตัว", () => {
@@ -137,7 +150,7 @@ test("ความถูกต้องของรหัสสาขาวั�
     const p = parseAdName("KKCX PF02-0284");
     assert.equal(p.status, "ok");
     assert.equal(p.branch, "สาขาทดสอบ");
-    assert.equal(p.isCanonicalName, true);
+    assert.equal(p.usesObsoleteBranchCode, false);
   } finally {
     primeParserMaps(null);
   }
@@ -183,13 +196,13 @@ test("รหัสสาขาเก่า N-BPG ถูกยุบเป็น 
   assert.equal(p.branchCode, "BPG");
   assert.equal(p.branch, "Class Go บางพลี");
   assert.equal(p.program, "ฟิลเลอร์");
-  // ชื่อยังใช้รหัสเก่า จึงยังไม่นับว่าตรงกติกา
-  assert.equal(p.isCanonicalName, false);
+  // ชื่อยังใช้รหัสเก่า ต้องติดธงไว้ให้ตามไปแก้
+  assert.equal(p.usesObsoleteBranchCode, true);
 
   // รหัสปัจจุบันต้องผ่านเต็ม
   const current = parseAdName("BPG PF02-0284");
   assert.equal(current.branchCode, "BPG");
-  assert.equal(current.isCanonicalName, true);
+  assert.equal(current.usesObsoleteBranchCode, false);
 });
 
 test("การยุบรหัสสาขาเก่าทำงานแม้รหัสเก่ายังค้างในตารางตั้งค่า", () => {
@@ -204,7 +217,7 @@ test("การยุบรหัสสาขาเก่าทำงานแ�
   try {
     const p = parseAdName("N-BPG PF02-0284");
     assert.equal(p.branchCode, "BPG");
-    assert.equal(p.isCanonicalName, false);
+    assert.equal(p.usesObsoleteBranchCode, true);
   } finally {
     primeParserMaps(null);
   }

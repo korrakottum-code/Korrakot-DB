@@ -3,6 +3,7 @@ import {
   findMissingFinalRanges,
   getSyncMeta,
   isRecentWindowFresh,
+  logSyncError,
   logSyncFailures,
   markSynced,
   recordSyncChangeStats,
@@ -40,6 +41,35 @@ function adNamesFromRows(rows: DailyMetricRow[]): AdNameRow[] {
     });
   }
   return [...byId.values()];
+}
+
+// เกณฑ์ "ถูกจนเป็นไปไม่ได้": CPI จริงของเราอยู่ราว ฿50–300 ถ้าบัญชีไหนได้ inbox เยอะแต่ spend ต่ำกว่านี้
+// แปลว่า Meta ตอบตัวเลข delivery ผิด (เคยเจอ ต.ค. 69 ตอบ spend ~0 โดยไม่มี error) ต้องบันทึกไว้ไม่ให้เงียบ
+const SUSPICIOUS_MIN_INBOX = 20;
+const SUSPICIOUS_MAX_CPI = 5;
+
+/** บัญชีที่ inbox รวม ≥ 20 แต่ spend รวมต่ำจน CPI < ฿5 ในชุดแถวที่ fetch มา */
+export function findSuspiciouslyCheapAccounts(rows: DailyMetricRow[]): Array<{ accountId: string; spend: number; inbox: number }> {
+  const byAccount = new Map<string, { spend: number; inbox: number }>();
+  for (const row of rows) {
+    const agg = byAccount.get(row.accountId) || { spend: 0, inbox: 0 };
+    agg.spend += row.spend;
+    agg.inbox += row.inbox;
+    byAccount.set(row.accountId, agg);
+  }
+  return [...byAccount.entries()]
+    .filter(([, a]) => a.inbox >= SUSPICIOUS_MIN_INBOX && a.spend < a.inbox * SUSPICIOUS_MAX_CPI)
+    .map(([accountId, a]) => ({ accountId, ...a }));
+}
+
+async function logSuspiciousDelivery(source: string, token: string, rows: DailyMetricRow[]): Promise<void> {
+  for (const s of findSuspiciouslyCheapAccounts(rows)) {
+    await logSyncError(
+      source,
+      `ตัวเลข delivery น่าสงสัย: inbox ${s.inbox} แต่ spend ฿${s.spend.toFixed(2)} (token ลงท้าย …${token.slice(-6)}) — ไม่ได้เขียนทับ spend เดิมที่เคยมี`,
+      { accountId: s.accountId }
+    );
+  }
 }
 
 // Meta ตอบ "Service temporarily unavailable"/"unknown error" ถ้าขอรายแอดรายวันช่วงยาวหลายเดือนในครั้งเดียว
@@ -95,6 +125,7 @@ export async function syncFinalDates(
     } catch (err) {
       console.warn("[sync-change-stats] failed:", err instanceof Error ? err.message : err);
     }
+    await logSuspiciousDelivery(`final-sync ${chunk.since}..${chunk.until}`, token, rows);
     await upsertDailyMetrics(rows);
     await upsertAdNames(adNamesFromRows(rows));
     // mark เฉพาะบัญชีที่ token นี้กวาดสำเร็จจริง — บัญชีที่พังหรืออยู่กับ token อื่นยังถือว่าไม่ sync
@@ -151,6 +182,7 @@ export async function syncRecentDates(
     } catch (err) {
       console.warn("[sync-change-stats] failed:", err instanceof Error ? err.message : err);
     }
+    await logSuspiciousDelivery(`recent-sync ${since}..${until}`, token, rows);
     await upsertDailyMetrics(rows);
     await upsertAdNames(adNamesFromRows(rows));
     await Promise.all(swept.map((id) => markSynced(id, recentDates)));

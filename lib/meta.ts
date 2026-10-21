@@ -47,6 +47,34 @@ async function mapSettledWithConcurrency<T, R>(
 
 const META_API_BASE = META_GRAPH_API_BASE;
 
+// Meta บั๊ก (เจอ 2026-10-21): บางบัญชี ถ้าขอ `actions` ในคำขอเดียวกับ spend/impressions
+// Meta ตอบ spend/impressions/clicks/reach เป็น ~0 ทั้งที่ inbox ยังถูก — ทำซ้ำได้ทุกครั้ง
+// (class Udon iii 20 ต.ค.: ขอรวม ฿64 / ขอแยก ฿10,112) และไม่มี error ให้จับเลย
+// จึงขอ delivery กับ action แยกเป็นสองคำขอเสมอ แล้วรวมกลับตาม (ad_id, วันที่)
+const AD_IDENTITY_FIELDS = "ad_id,ad_name,campaign_id,adset_id";
+
+async function fetchAdInsightRows(
+  accountId: string,
+  token: string,
+  deliveryFields: string,
+  actionFields: string,
+  timeParams: string
+): Promise<Record<string, unknown>[]> {
+  const base = `${META_API_BASE}/${accountId}/insights?level=ad&time_increment=1${timeParams}&limit=500&access_token=${token}`;
+  // ทีละคำขอ ไม่ยิงคู่ขนาน — กันโควตา burst ของ Meta (ดู ACCOUNT_FETCH_CONCURRENCY)
+  const delivery = await fetchGraphPages<Record<string, unknown>>(`${base}&fields=${AD_IDENTITY_FIELDS},${deliveryFields}`);
+  if (delivery.error) throw new Error(delivery.error.message);
+  const actions = await fetchGraphPages<Record<string, unknown>>(`${base}&fields=${AD_IDENTITY_FIELDS},${actionFields}`);
+  if (actions.error) throw new Error(actions.error.message);
+
+  const key = (row: Record<string, unknown>) => `${row.ad_id ?? ""}|${row.date_start ?? ""}`;
+  const merged = new Map<string, Record<string, unknown>>();
+  for (const row of delivery.data) merged.set(key(row), row);
+  // แอดที่มีแต่ action ไม่มี delivery วันนั้น (ทักจากโฆษณาเมื่อวาน) ยังต้องได้แถวของตัวเอง
+  for (const row of actions.data) merged.set(key(row), { ...row, ...merged.get(key(row)) });
+  return [...merged.values()];
+}
+
 export interface AdInsight {
   adName: string;
   parsed: ParsedAdName;
@@ -120,16 +148,16 @@ async function fetchInsightsForAccount(
     timeRange = `&date_preset=${datePreset}`;
   }
 
-  const fields = "ad_id,ad_name,campaign_id,adset_id,spend,impressions,clicks,reach,ctr,cpc,cpm,actions,cost_per_action_type";
   const insights: AdInsight[] = [];
-  const initialUrl = `${META_API_BASE}/${accountId}/insights?fields=${fields}&level=ad&time_increment=1${timeRange}&limit=500&access_token=${token}`;
-  const result = await fetchGraphPages<Record<string, unknown>>(initialUrl);
+  const rows = await fetchAdInsightRows(
+    accountId,
+    token,
+    "spend,impressions,clicks,reach,ctr,cpc,cpm",
+    "actions,cost_per_action_type",
+    timeRange
+  );
 
-  if (result.error) {
-    throw new Error(result.error.message);
-  }
-
-  for (const row of result.data) {
+  for (const row of rows) {
     if (!row.ad_name) continue;
     const adName = String(row.ad_name);
     const parsed = parseAdName(adName);
@@ -227,15 +255,11 @@ async function fetchDailyMetricsForAccount(
 ): Promise<DailyMetricRow[]> {
   // ad_name มาฟรีกับ insights (เป็นชื่อปัจจุบัน ณ เวลา fetch) — ใช้อัปเดต ad_name_cache
   // โดยไม่ต้องกวาดรายชื่อแอดทั้งบัญชีแยกอีกรอบ
-  const fields = "ad_id,ad_name,campaign_id,adset_id,spend,impressions,clicks,reach,actions";
   const timeRange = `&time_range={"since":"${since}","until":"${until}"}`;
-  const initialUrl = `${META_API_BASE}/${accountId}/insights?fields=${fields}&level=ad&time_increment=1${timeRange}&limit=500&access_token=${token}`;
-  const result = await fetchGraphPages<Record<string, unknown>>(initialUrl);
-
-  if (result.error) throw new Error(result.error.message);
+  const fetched = await fetchAdInsightRows(accountId, token, "spend,impressions,clicks,reach", "actions", timeRange);
 
   const rows: DailyMetricRow[] = [];
-  for (const row of result.data) {
+  for (const row of fetched) {
     const adId = String(row.ad_id || "");
     if (!adId) continue;
     const getAction = (actions: { action_type: string; value: string }[], type: string) =>

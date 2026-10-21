@@ -482,6 +482,8 @@ export async function setSyncMeta(key: string): Promise<void> {
   );
 }
 
+const KEEP_OLD_DELIVERY = "excluded.spend = 0 and excluded.impressions = 0 and ad_daily_metrics.spend > 0";
+
 export async function upsertDailyMetrics(rows: DailyMetricRow[]): Promise<void> {
   if (rows.length === 0) return;
   const db = getPool();
@@ -503,10 +505,13 @@ export async function upsertDailyMetrics(rows: DailyMetricRow[]): Promise<void> 
        on conflict (account_id, ad_id, date) do update set
          campaign_id = excluded.campaign_id,
          ad_set_id = excluded.ad_set_id,
-         spend = excluded.spend,
-         impressions = excluded.impressions,
-         clicks = excluded.clicks,
-         reach = excluded.reach,
+         -- กันข้อมูลศูนย์เขียนทับข้อมูลดี: แอดที่เคยมี spend แล้ว fetch ใหม่ได้ spend=0 และ imp=0
+         -- แทบไม่มีทางเป็นจริง (Meta ไม่ลดยอดเป็นศูนย์ย้อนหลัง) แต่เคยเกิดจากบั๊กฝั่ง Meta
+         -- (ดู fetchAdInsightRows ใน lib/meta.ts) — คงค่า delivery เดิม ส่วน inbox/depth3/leads อัปเดตตามปกติ
+         spend = case when ${KEEP_OLD_DELIVERY} then ad_daily_metrics.spend else excluded.spend end,
+         impressions = case when ${KEEP_OLD_DELIVERY} then ad_daily_metrics.impressions else excluded.impressions end,
+         clicks = case when ${KEEP_OLD_DELIVERY} then ad_daily_metrics.clicks else excluded.clicks end,
+         reach = case when ${KEEP_OLD_DELIVERY} then ad_daily_metrics.reach else excluded.reach end,
          inbox = excluded.inbox,
          depth3 = excluded.depth3,
          leads = excluded.leads,

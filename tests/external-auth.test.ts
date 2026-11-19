@@ -35,6 +35,18 @@ test("readExternalApiKeys: รหัสสั้นเกินไปหรื�
   assert.deepEqual(readExternalApiKeys({ EXTERNAL_API_KEY_QLASS: "short" }), []);
 });
 
+const ngaewKey = "ngaew-bot-secret-that-is-also-longer-than-thirty-two-chars";
+
+test("readExternalApiKeys: รหัสของแงว (EXTERNAL_API_KEY_NGAEW) ใช้ร่วมกับรหัสเดิมได้ และสั้นเกินไม่ถูกนับ", () => {
+  assert.deepEqual(
+    readExternalApiKeys({ EXTERNAL_API_KEY: validKey, EXTERNAL_API_KEY_QLASS: otherKey, EXTERNAL_API_KEY_NGAEW: ngaewKey }),
+    [validKey, otherKey, ngaewKey]
+  );
+  assert.deepEqual(readExternalApiKeys({ EXTERNAL_API_KEY_NGAEW: ngaewKey }), [ngaewKey]);
+  assert.deepEqual(readExternalApiKeys({ EXTERNAL_API_KEY: validKey, EXTERNAL_API_KEY_NGAEW: "short" }), [validKey]);
+  assert.deepEqual(readExternalApiKeys({ EXTERNAL_API_KEY_NGAEW: "short" }), []);
+});
+
 test("verifyAnyExternalApiKey: ตรงกับรหัสใดรหัสหนึ่งก็ผ่าน นอกนั้นไม่ผ่าน", () => {
   const keys = [validKey, otherKey];
   assert.equal(verifyAnyExternalApiKey(validKey, keys), true);

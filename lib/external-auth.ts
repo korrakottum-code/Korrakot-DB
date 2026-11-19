@@ -27,7 +27,7 @@ export function readExternalApiKey(env: Record<string, string | undefined> = pro
 
 // รหัสแยกรายผู้เรียก — ให้ระบบใหม่มีรหัสของตัวเอง โดย EXTERNAL_API_KEY เดิมที่ระบบอื่นใช้อยู่ไม่ต้องเปลี่ยน
 // เพิกถอนรายตัวได้แค่ลบตัวแปรนั้น (ยาวไม่ถึง MIN_KEY_LENGTH = ถือว่าไม่ได้ตั้งค่า เหมือน fail-closed ของตัวหลัก)
-const PER_CONSUMER_KEY_NAMES = ["EXTERNAL_API_KEY_QLASS"] as const;
+const PER_CONSUMER_KEY_NAMES = ["EXTERNAL_API_KEY_QLASS", "EXTERNAL_API_KEY_NGAEW"] as const;
 
 export function readExternalApiKeys(env: Record<string, string | undefined> = process.env): string[] {
   const keys: string[] = [];
